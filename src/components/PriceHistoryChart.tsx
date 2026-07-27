@@ -77,6 +77,10 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
   const plotWidthRef = useRef(0);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holding = useRef(false);
+  /** Short tap while pinned → dismiss on release; long-press moves year and keeps pin. */
+  const pendingDismiss = useRef(false);
+  const scrubRef = useRef<ScrubState | null>(null);
+  scrubRef.current = scrub;
 
   const activeSeries = useMemo(() => SERIES.filter((s) => visible[s.key]), [visible]);
 
@@ -112,30 +116,42 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
     return Math.max(0, Math.min(yearly.length - 1, Math.floor(clamped / COL_W)));
   };
 
+  const applyScrubAt = (x: number) => {
+    const idx = indexFromX(x);
+    setScrub({ index: idx, x: idx * COL_W + COL_W / 2 });
+  };
+
   const beginHold = (x: number) => {
     clearHoldTimer();
     holding.current = false;
     holdTimer.current = setTimeout(() => {
       holding.current = true;
-      const idx = indexFromX(x);
-      setScrub({ index: idx, x: idx * COL_W + COL_W / 2 });
+      pendingDismiss.current = false;
+      applyScrubAt(x);
     }, 280);
   };
 
   const moveHold = (x: number) => {
     if (!holding.current) return;
-    const idx = indexFromX(x);
-    setScrub({ index: idx, x: idx * COL_W + COL_W / 2 });
+    pendingDismiss.current = false;
+    applyScrubAt(x);
   };
 
+  /** Keep card after finger up; only clear on short re-tap or series toggle. */
   const endHold = () => {
     clearHoldTimer();
+    if (pendingDismiss.current && !holding.current) {
+      setScrub(null);
+    }
+    pendingDismiss.current = false;
     holding.current = false;
-    setScrub(null);
   };
 
   const onGrant = (e: GestureResponderEvent) => {
-    beginHold(e.nativeEvent.locationX);
+    const x = e.nativeEvent.locationX;
+    // Another touch on the chart while pinned: short tap dismisses; hold moves year
+    pendingDismiss.current = scrubRef.current !== null;
+    beginHold(x);
   };
 
   const onMove = (e: GestureResponderEvent) => {
@@ -171,7 +187,8 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
         })}
       </View>
       <Text style={styles.legendHint}>
-        시리즈를 눌러 선택 · 길게 누르면 해당 연도 가격 표시 · 점선 = min/max
+        시리즈 선택 · 길게 누르면 연도 가격(손 떼도 유지) · 차트 다시 짧게 누르면 닫힘 · 점선 =
+        min/max
       </Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -498,15 +515,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     borderWidth: 1,
     borderColor: '#d7dee7',
     zIndex: 5,
+    elevation: 4,
+    // Keep tooltip clear of a resting finger near the mid/bottom of the plot
     shadowColor: '#000',
     shadowOpacity: 0.12,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
   },
   scrubYear: {
     fontSize: 12,
