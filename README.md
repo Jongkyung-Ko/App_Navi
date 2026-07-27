@@ -51,6 +51,13 @@ curl "http://localhost:3001/api/geocode/reverse?lat=37.5665&lng=126.9780"
 curl "http://localhost:3001/api/trades?lawdCd=11140&months=1"
 ```
 
+## 공개 배포 URL
+
+- 앱/API: https://app-navi-production.up.railway.app
+- 상태: https://app-navi-production.up.railway.app/health
+
+카카오맵 JS를 쓰려면 디벨로퍼스 Web 도메인에 `app-navi-production.up.railway.app` 를 등록하세요. (미등록 시 OSM 폴백)
+
 ## 실행
 
 터미널 1 — 프록시:
