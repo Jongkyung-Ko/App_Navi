@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateComplexes,
   average,
+  buildChartTradeDots,
+  buildQuarterlyComparison,
   buildYearlyComparison,
   changePercent,
   extractAreaBands,
   formatTrendSummary,
   median,
   pricePerPyeong,
+  quarterOfMonth,
   recentYearMonths,
   type ApartmentTrade,
 } from '../types.js';
@@ -120,6 +123,88 @@ describe('extractAreaBands', () => {
     expect(bands.map((b) => b.targetM2)).toEqual([59, 84]);
     expect(bands[0].label).toContain('평');
     expect(bands[1].saleCount).toBe(2);
+  });
+});
+
+describe('buildQuarterlyComparison', () => {
+  it('builds quarterly sale/jeonse/gap series', () => {
+    const sales = [
+      trade({
+        aptName: 'A',
+        price: 10000,
+        exclusiveArea: 84,
+        dealYear: 2024,
+        dealMonth: 2,
+      }),
+      trade({
+        aptName: 'A',
+        price: 12000,
+        exclusiveArea: 84,
+        dealYear: 2024,
+        dealMonth: 8,
+      }),
+    ];
+    const rents = [
+      trade({
+        aptName: 'A',
+        price: 6000,
+        exclusiveArea: 84,
+        dealYear: 2024,
+        dealMonth: 2,
+        kind: 'jeonse',
+      }),
+      trade({
+        aptName: 'A',
+        price: 7000,
+        exclusiveArea: 84,
+        dealYear: 2024,
+        dealMonth: 8,
+        kind: 'jeonse',
+      }),
+    ];
+    const quarterly = buildQuarterlyComparison(sales, rents, 1, new Date(2024, 11, 1));
+    expect(quarterly).toHaveLength(4);
+    expect(quarterly.map((q) => q.key)).toEqual(['2024-Q1', '2024-Q2', '2024-Q3', '2024-Q4']);
+    expect(quarterly[0].saleMedian).toBe(10000);
+    expect(quarterly[0].jeonseMedian).toBe(6000);
+    expect(quarterly[0].gap).toBe(4000);
+    expect(quarterly[2].saleMedian).toBe(12000);
+    expect(quarterly[1].saleMedian).toBeNull();
+  });
+
+  it('maps month to quarter', () => {
+    expect(quarterOfMonth(1)).toBe(1);
+    expect(quarterOfMonth(4)).toBe(2);
+    expect(quarterOfMonth(9)).toBe(3);
+    expect(quarterOfMonth(12)).toBe(4);
+  });
+
+  it('builds trade scatter dots including gap vs quarter jeonse median', () => {
+    const sales = [
+      trade({
+        aptName: 'A',
+        price: 10000,
+        exclusiveArea: 84,
+        dealYear: 2024,
+        dealMonth: 2,
+        dealDay: 10,
+      }),
+    ];
+    const rents = [
+      trade({
+        aptName: 'A',
+        price: 6000,
+        exclusiveArea: 84,
+        dealYear: 2024,
+        dealMonth: 1,
+        kind: 'jeonse',
+      }),
+    ];
+    const quarterly = buildQuarterlyComparison(sales, rents, 1, new Date(2024, 2, 1));
+    const dots = buildChartTradeDots(sales, rents, quarterly);
+    expect(dots.some((d) => d.kind === 'sale' && d.price === 10000)).toBe(true);
+    expect(dots.some((d) => d.kind === 'jeonse' && d.price === 6000)).toBe(true);
+    expect(dots.some((d) => d.kind === 'gap' && d.price === 4000)).toBe(true);
   });
 });
 

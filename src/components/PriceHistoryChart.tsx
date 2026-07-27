@@ -8,17 +8,19 @@ import {
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
-import type { YearlyPricePoint } from '../types';
+import type { ChartTradeDot, QuarterlyPricePoint } from '../types';
 import { formatManwon } from '../utils/format';
 
 interface PriceHistoryChartProps {
-  yearly: YearlyPricePoint[];
+  quarterly: QuarterlyPricePoint[];
+  chartDots?: ChartTradeDot[];
   summary?: string;
 }
 
-const CHART_H = 160;
-const COL_W = 56;
-const DOT = 8;
+const CHART_H = 168;
+const COL_W = 40;
+const DOT = 7;
+const TRADE_DOT = 4;
 
 type SeriesKey = 'sale' | 'jeonse' | 'gap';
 
@@ -29,6 +31,7 @@ type SeriesDef = {
   maxKey: 'saleMax' | 'jeonseMax' | 'gapMax';
   color: string;
   rangeColor: string;
+  tradeColor: string;
   label: string;
 };
 
@@ -40,6 +43,7 @@ const SERIES: SeriesDef[] = [
     maxKey: 'saleMax',
     color: '#c45c26',
     rangeColor: 'rgba(196, 92, 38, 0.55)',
+    tradeColor: 'rgba(196, 92, 38, 0.28)',
     label: '매매',
   },
   {
@@ -49,6 +53,7 @@ const SERIES: SeriesDef[] = [
     maxKey: 'jeonseMax',
     color: '#2f6fed',
     rangeColor: 'rgba(47, 111, 237, 0.55)',
+    tradeColor: 'rgba(47, 111, 237, 0.28)',
     label: '전세',
   },
   {
@@ -58,6 +63,7 @@ const SERIES: SeriesDef[] = [
     maxKey: 'gapMax',
     color: '#1f6f4a',
     rangeColor: 'rgba(31, 111, 74, 0.55)',
+    tradeColor: 'rgba(31, 111, 74, 0.28)',
     label: '갭',
   },
 ];
@@ -71,13 +77,16 @@ type ScrubState = {
   x: number;
 };
 
-export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
+export function PriceHistoryChart({
+  quarterly,
+  chartDots = [],
+  summary,
+}: PriceHistoryChartProps) {
   const [visible, setVisible] = useState<VisibleMap>(DEFAULT_VISIBLE);
   const [scrub, setScrub] = useState<ScrubState | null>(null);
   const plotWidthRef = useRef(0);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holding = useRef(false);
-  /** Short tap while pinned → dismiss on release; long-press moves year and keeps pin. */
   const pendingDismiss = useRef(false);
   const scrubRef = useRef<ScrubState | null>(null);
   scrubRef.current = scrub;
@@ -85,14 +94,19 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
   const activeSeries = useMemo(() => SERIES.filter((s) => visible[s.key]), [visible]);
 
   const max = useMemo(() => {
-    const vals = yearly.flatMap((y) =>
+    const fromLines = quarterly.flatMap((y) =>
       activeSeries.flatMap((s) => [y[s.medianKey], y[s.minKey], y[s.maxKey]]),
     );
-    const positive = vals.filter((v): v is number => v !== null && Number.isFinite(v) && v > 0);
+    const fromDots = chartDots
+      .filter((d) => visible[d.kind])
+      .map((d) => d.price);
+    const positive = [...fromLines, ...fromDots].filter(
+      (v): v is number => v !== null && Number.isFinite(v) && v > 0,
+    );
     return Math.max(1, ...positive);
-  }, [yearly, activeSeries]);
+  }, [quarterly, activeSeries, chartDots, visible]);
 
-  const chartWidth = Math.max(yearly.length * COL_W, COL_W);
+  const chartWidth = Math.max(quarterly.length * COL_W, COL_W);
 
   const toggleSeries = (key: SeriesKey) => {
     setVisible((prev) => {
@@ -111,9 +125,9 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
   };
 
   const indexFromX = (x: number) => {
-    if (yearly.length === 0) return 0;
+    if (quarterly.length === 0) return 0;
     const clamped = Math.max(0, Math.min(chartWidth - 1, x));
-    return Math.max(0, Math.min(yearly.length - 1, Math.floor(clamped / COL_W)));
+    return Math.max(0, Math.min(quarterly.length - 1, Math.floor(clamped / COL_W)));
   };
 
   const applyScrubAt = (x: number) => {
@@ -137,7 +151,6 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
     applyScrubAt(x);
   };
 
-  /** Keep card after finger up; only clear on short re-tap or series toggle. */
   const endHold = () => {
     clearHoldTimer();
     if (pendingDismiss.current && !holding.current) {
@@ -148,22 +161,25 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
   };
 
   const onGrant = (e: GestureResponderEvent) => {
-    const x = e.nativeEvent.locationX;
-    // Another touch on the chart while pinned: short tap dismisses; hold moves year
     pendingDismiss.current = scrubRef.current !== null;
-    beginHold(x);
+    beginHold(e.nativeEvent.locationX);
   };
 
   const onMove = (e: GestureResponderEvent) => {
     moveHold(e.nativeEvent.locationX);
   };
 
-  const scrubPoint = scrub ? yearly[scrub.index] : null;
+  const scrubPoint = scrub ? quarterly[scrub.index] : null;
 
-  if (yearly.length === 0) {
+  const visibleDots = useMemo(
+    () => chartDots.filter((d) => visible[d.kind] && d.price > 0 && Number.isFinite(d.price)),
+    [chartDots, visible],
+  );
+
+  if (quarterly.length === 0) {
     return (
       <View style={styles.wrap}>
-        <Text style={styles.empty}>연도별 시세 데이터가 없습니다.</Text>
+        <Text style={styles.empty}>분기별 시세 데이터가 없습니다.</Text>
       </View>
     );
   }
@@ -187,8 +203,8 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
         })}
       </View>
       <Text style={styles.legendHint}>
-        시리즈 선택 · 길게 누르면 연도 가격(손 떼도 유지) · 차트 다시 짧게 누르면 닫힘 · 점선 =
-        min/max
+        분기 중위가 라인 · 옅은 점 = 실거래 · 길게 누르면 분기 가격(손 떼도 유지) · 짧게 다시
+        누르면 닫힘
       </Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -205,25 +221,48 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
             onResponderRelease={endHold}
             onResponderTerminate={endHold}
           >
+            {/* Trade scatter under lines */}
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              {visibleDots.map((d, idx) => {
+                const series = SERIES.find((s) => s.key === d.kind);
+                if (!series) return null;
+                const left = d.x * COL_W - TRADE_DOT / 2;
+                const top = valueToY(d.price, max) - TRADE_DOT / 2;
+                return (
+                  <View
+                    key={`t-${d.kind}-${idx}`}
+                    style={[
+                      styles.tradeDot,
+                      {
+                        left,
+                        top,
+                        backgroundColor: series.tradeColor,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+
             {activeSeries.map((series) => (
               <React.Fragment key={series.key}>
                 <LineSeries
                   color={series.rangeColor}
-                  values={yearly.map((y) => y[series.maxKey])}
+                  values={quarterly.map((y) => y[series.maxKey])}
                   max={max}
                   dashed
                   showDots={false}
                 />
                 <LineSeries
                   color={series.rangeColor}
-                  values={yearly.map((y) => y[series.minKey])}
+                  values={quarterly.map((y) => y[series.minKey])}
                   max={max}
                   dashed
                   showDots={false}
                 />
                 <LineSeries
                   color={series.color}
-                  values={yearly.map((y) => y[series.medianKey])}
+                  values={quarterly.map((y) => y[series.medianKey])}
                   max={max}
                 />
               </React.Fragment>
@@ -240,7 +279,7 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
                     },
                   ]}
                 >
-                  <Text style={styles.scrubYear}>{scrubPoint.year}년</Text>
+                  <Text style={styles.scrubYear}>{scrubPoint.label}</Text>
                   {activeSeries.map((s) => {
                     const median = scrubPoint[s.medianKey];
                     const min = scrubPoint[s.minKey];
@@ -264,24 +303,16 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
           </View>
 
           <View style={styles.axisRow}>
-            {yearly.map((y, idx) => (
-              <View key={y.year} style={styles.axisCol}>
+            {quarterly.map((q, idx) => (
+              <View key={q.key} style={styles.axisCol}>
                 <Text style={[styles.year, scrub?.index === idx && styles.yearActive]}>
-                  {String(y.year).slice(2)}
+                  {q.quarter === 1 ? String(q.year).slice(2) : `${q.quarter}Q`}
                 </Text>
-                {visible.sale ? (
-                  <Text style={styles.tip}>{y.saleMedian !== null ? formatManwon(y.saleMedian) : '-'}</Text>
-                ) : null}
-                {visible.jeonse ? (
-                  <Text style={[styles.tip, styles.tipJeonse]}>
-                    {y.jeonseMedian !== null ? formatManwon(y.jeonseMedian) : '-'}
-                  </Text>
-                ) : null}
-                {visible.gap ? (
-                  <Text style={[styles.tip, styles.tipGap]}>
-                    {y.gap !== null ? formatManwon(y.gap) : '-'}
-                  </Text>
-                ) : null}
+                {q.quarter === 1 ? (
+                  <Text style={styles.axisSub}>년</Text>
+                ) : (
+                  <Text style={styles.axisSub}> </Text>
+                )}
               </View>
             ))}
           </View>
@@ -498,7 +529,15 @@ const styles = StyleSheet.create({
     width: DOT,
     height: DOT,
     borderRadius: DOT / 2,
-    borderWidth: 2.5,
+    borderWidth: 2,
+    zIndex: 2,
+  },
+  tradeDot: {
+    position: 'absolute',
+    width: TRADE_DOT,
+    height: TRADE_DOT,
+    borderRadius: TRADE_DOT / 2,
+    zIndex: 1,
   },
   scrubLine: {
     position: 'absolute',
@@ -520,7 +559,6 @@ const styles = StyleSheet.create({
     borderColor: '#d7dee7',
     zIndex: 5,
     elevation: 4,
-    // Keep tooltip clear of a resting finger near the mid/bottom of the plot
     shadowColor: '#000',
     shadowOpacity: 0.12,
     shadowRadius: 6,
@@ -563,21 +601,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   year: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '800',
     color: '#1a2332',
   },
   yearActive: {
     color: '#c45c26',
   },
-  tip: {
-    marginTop: 2,
+  axisSub: {
     fontSize: 8,
-    color: '#c45c26',
-    textAlign: 'center',
+    color: '#9aa3ad',
+    height: 10,
   },
-  tipJeonse: { color: '#2f6fed' },
-  tipGap: { color: '#1f6f4a' },
   empty: {
     color: '#6b7580',
     textAlign: 'center',

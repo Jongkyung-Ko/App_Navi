@@ -41,6 +41,10 @@ export interface ComplexSummary {
   saleJeonseGap: number | null;
   /** 최근 10년 연도별 매매/전세/차이 */
   yearly: YearlyPricePoint[];
+  /** 분기별 매매/전세/갭 (차트 X축) */
+  quarterly: QuarterlyPricePoint[];
+  /** 실거래 산점도 */
+  chartDots: ChartTradeDot[];
   recentJeonseTrades: ApartmentTrade[];
 }
 
@@ -64,6 +68,34 @@ export interface YearlyPricePoint {
   gapMax: number | null;
   saleCount: number;
   jeonseCount: number;
+}
+
+/** 분기별 시세 (차트 X축) */
+export interface QuarterlyPricePoint {
+  year: number;
+  quarter: 1 | 2 | 3 | 4;
+  /** e.g. 2024-Q1 */
+  key: string;
+  /** e.g. 24'1Q */
+  label: string;
+  saleMedian: number | null;
+  saleMin: number | null;
+  saleMax: number | null;
+  jeonseMedian: number | null;
+  jeonseMin: number | null;
+  jeonseMax: number | null;
+  gap: number | null;
+  gapMin: number | null;
+  gapMax: number | null;
+  saleCount: number;
+  jeonseCount: number;
+}
+
+/** 차트용 실거래 산점도 (x = 분기 컬럼 소수 인덱스) */
+export interface ChartTradeDot {
+  kind: 'sale' | 'jeonse' | 'gap';
+  price: number;
+  x: number;
 }
 
 export interface AreaBand {
@@ -256,6 +288,166 @@ export function buildYearlyComparison(
   return points;
 }
 
+export function quarterOfMonth(month: number): 1 | 2 | 3 | 4 {
+  if (month <= 3) return 1;
+  if (month <= 6) return 2;
+  if (month <= 9) return 3;
+  return 4;
+}
+
+export function quarterKey(year: number, quarter: number): string {
+  return `${year}-Q${quarter}`;
+}
+
+function priceBand(
+  sales: number[],
+  rents: number[],
+): Pick<
+  QuarterlyPricePoint,
+  | 'saleMedian'
+  | 'saleMin'
+  | 'saleMax'
+  | 'jeonseMedian'
+  | 'jeonseMin'
+  | 'jeonseMax'
+  | 'gap'
+  | 'gapMin'
+  | 'gapMax'
+  | 'saleCount'
+  | 'jeonseCount'
+> {
+  const saleMedian = sales.length ? median(sales) : null;
+  const saleMin = sales.length ? Math.min(...sales) : null;
+  const saleMax = sales.length ? Math.max(...sales) : null;
+  const jeonseMedian = rents.length ? median(rents) : null;
+  const jeonseMin = rents.length ? Math.min(...rents) : null;
+  const jeonseMax = rents.length ? Math.max(...rents) : null;
+  const gap =
+    saleMedian !== null && jeonseMedian !== null ? saleMedian - jeonseMedian : null;
+  const gapMin = saleMin !== null && jeonseMax !== null ? saleMin - jeonseMax : null;
+  const gapMax = saleMax !== null && jeonseMin !== null ? saleMax - jeonseMin : null;
+  return {
+    saleMedian,
+    saleMin,
+    saleMax,
+    jeonseMedian,
+    jeonseMin,
+    jeonseMax,
+    gap,
+    gapMin,
+    gapMax,
+    saleCount: sales.length,
+    jeonseCount: rents.length,
+  };
+}
+
+export function buildQuarterlyComparison(
+  saleTrades: ApartmentTrade[],
+  jeonseTrades: ApartmentTrade[],
+  yearCount = 10,
+  from = new Date(),
+): QuarterlyPricePoint[] {
+  const endYear = from.getFullYear();
+  const endQuarter = quarterOfMonth(from.getMonth() + 1);
+  const startYear = endYear - yearCount + 1;
+  const points: QuarterlyPricePoint[] = [];
+
+  for (let year = startYear; year <= endYear; year++) {
+    const lastQ = year === endYear ? endQuarter : 4;
+    for (let q = 1; q <= lastQ; q++) {
+      const quarter = q as 1 | 2 | 3 | 4;
+      const sales = saleTrades
+        .filter((t) => t.dealYear === year && quarterOfMonth(t.dealMonth) === quarter)
+        .map((t) => t.price);
+      const rents = jeonseTrades
+        .filter((t) => t.dealYear === year && quarterOfMonth(t.dealMonth) === quarter)
+        .map((t) => t.price);
+      points.push({
+        year,
+        quarter,
+        key: quarterKey(year, quarter),
+        label: `${String(year).slice(2)}'${quarter}Q`,
+        ...priceBand(sales, rents),
+      });
+    }
+  }
+  return points;
+}
+
+/** Fractional column index within quarterly axis for a trade date. */
+export function tradeXIndex(
+  dealYear: number,
+  dealMonth: number,
+  dealDay: number,
+  quarterIndexByKey: Map<string, number>,
+): number | null {
+  const q = quarterOfMonth(dealMonth);
+  const idx = quarterIndexByKey.get(quarterKey(dealYear, q));
+  if (idx === undefined) return null;
+  const monthInQuarter = (dealMonth - 1) % 3;
+  const dayFrac = Math.min(30, Math.max(1, dealDay)) / 31;
+  const within = (monthInQuarter + dayFrac) / 3;
+  return idx + 0.08 + within * 0.84;
+}
+
+export function buildChartTradeDots(
+  saleTrades: ApartmentTrade[],
+  jeonseTrades: ApartmentTrade[],
+  quarterly: QuarterlyPricePoint[],
+  maxPerKind = 280,
+): ChartTradeDot[] {
+  const indexByKey = new Map(quarterly.map((p, i) => [p.key, i]));
+  const jeonseMedByKey = new Map(
+    quarterly
+      .filter((p) => p.jeonseMedian !== null)
+      .map((p) => [p.key, p.jeonseMedian as number]),
+  );
+
+  const saleDots: ChartTradeDot[] = [];
+  const jeonseDots: ChartTradeDot[] = [];
+  const gapDots: ChartTradeDot[] = [];
+
+  const sortedSales = [...saleTrades].sort((a, b) => a.dealDate.localeCompare(b.dealDate));
+  const sortedRents = [...jeonseTrades].sort((a, b) => a.dealDate.localeCompare(b.dealDate));
+
+  for (const t of sortedSales) {
+    const x = tradeXIndex(t.dealYear, t.dealMonth, t.dealDay, indexByKey);
+    if (x === null || !(t.price > 0)) continue;
+    if (saleDots.length < maxPerKind) {
+      saleDots.push({ kind: 'sale', price: t.price, x });
+    }
+    const qKey = quarterKey(t.dealYear, quarterOfMonth(t.dealMonth));
+    const jMed = jeonseMedByKey.get(qKey);
+    if (jMed !== undefined && gapDots.length < maxPerKind) {
+      const gap = t.price - jMed;
+      if (Number.isFinite(gap)) gapDots.push({ kind: 'gap', price: gap, x });
+    }
+  }
+
+  for (const t of sortedRents) {
+    const x = tradeXIndex(t.dealYear, t.dealMonth, t.dealDay, indexByKey);
+    if (x === null || !(t.price > 0)) continue;
+    if (jeonseDots.length < maxPerKind) {
+      jeonseDots.push({ kind: 'jeonse', price: t.price, x });
+    }
+  }
+
+  // Prefer spreading older+newer if over cap: already chronological take first max — use stride sample if oversize
+  const sample = <T,>(arr: T[], max: number): T[] => {
+    if (arr.length <= max) return arr;
+    const out: T[] = [];
+    const step = arr.length / max;
+    for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]!);
+    return out;
+  };
+
+  return [
+    ...sample(saleDots, maxPerKind),
+    ...sample(jeonseDots, maxPerKind),
+    ...sample(gapDots, maxPerKind),
+  ];
+}
+
 export function aggregateComplexes(
   trades: ApartmentTrade[],
   areaFilter?: { target: number; tolerance: number },
@@ -335,6 +527,8 @@ export function aggregateComplexes(
     const saleJeonseGap =
       prices.length && medianJeonse !== null ? medianPrice - medianJeonse : null;
     const yearly = buildYearlyComparison(list, rents, yearCount);
+    const quarterly = buildQuarterlyComparison(list, rents, yearCount);
+    const chartDots = buildChartTradeDots(list, rents, quarterly);
 
     summaries.push({
       id,
@@ -357,6 +551,8 @@ export function aggregateComplexes(
       jeonseCount: rents.length,
       saleJeonseGap,
       yearly,
+      quarterly,
+      chartDots,
       recentJeonseTrades: [...rents]
         .sort((a, b) => b.dealDate.localeCompare(a.dealDate))
         .slice(0, 20),

@@ -204,12 +204,16 @@ export default function ComplexDetailScreen() {
 
           <Text style={styles.section}>최근 {chartYears}년 시세</Text>
           <Text style={styles.sectionHint}>
-            {selectedLabel} · 매매/전세/갭 선택 · 길게 누르면 연도별 가격 표시
+            {selectedLabel} · 분기 단위 · 옅은 점=실거래 · 길게 누르면 분기 가격
             {extending ? ' · 10년 데이터 불러오는 중…' : ''}
           </Text>
           {loading ? <LoadingBlock label="면적별 시세 다시 집계 중…" /> : null}
           {extending ? <LoadingBlock label="과거 10년 매매·전세 시세를 이어서 집계 중…" /> : null}
-          <PriceHistoryChart yearly={complex.yearly ?? []} summary={chartSummary} />
+          <PriceHistoryChart
+            quarterly={complex.quarterly ?? []}
+            chartDots={complex.chartDots ?? []}
+            summary={chartSummary}
+          />
 
           <Text style={styles.section}>최근 매매</Text>
           <TradeTable rows={complex.recentTrades} empty="매매 내역이 없습니다." />

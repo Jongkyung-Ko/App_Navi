@@ -38,6 +38,30 @@ export interface YearlyPricePoint {
   jeonseCount: number;
 }
 
+export interface QuarterlyPricePoint {
+  year: number;
+  quarter: 1 | 2 | 3 | 4;
+  key: string;
+  label: string;
+  saleMedian: number | null;
+  saleMin: number | null;
+  saleMax: number | null;
+  jeonseMedian: number | null;
+  jeonseMin: number | null;
+  jeonseMax: number | null;
+  gap: number | null;
+  gapMin: number | null;
+  gapMax: number | null;
+  saleCount: number;
+  jeonseCount: number;
+}
+
+export interface ChartTradeDot {
+  kind: 'sale' | 'jeonse' | 'gap';
+  price: number;
+  x: number;
+}
+
 export interface AreaBand {
   targetM2: number;
   pyeong: number;
@@ -68,6 +92,8 @@ export interface ComplexSummary {
   jeonseCount: number;
   saleJeonseGap: number | null;
   yearly: YearlyPricePoint[];
+  quarterly?: QuarterlyPricePoint[];
+  chartDots?: ChartTradeDot[];
   recentJeonseTrades: ApartmentTrade[];
 }
 
