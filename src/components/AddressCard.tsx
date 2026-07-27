@@ -21,15 +21,23 @@ export function AddressCard({ address, loading }: AddressCardProps) {
   if (!address) return null;
 
   const primary = address.roadAddress ?? address.jibunAddress ?? '주소 없음';
-  const region = [address.region1, address.region2, address.region3].filter(Boolean).join(' ');
+  const detail = [address.region1, address.region2, address.region3].filter(Boolean).join(' ');
+  const scope =
+    address.sigunguLabel ??
+    [address.region1, address.region2].filter(Boolean).join(' ') ??
+    address.lawdCd;
 
   return (
     <View style={styles.card}>
       <Text style={styles.label}>현재 위치</Text>
       <Text style={styles.address}>{primary}</Text>
-      <Text style={styles.meta}>{region}</Text>
+      <Text style={styles.meta}>{detail}</Text>
+      <Text style={styles.scope}>
+        시세 조사 범위 · {scope}
+        <Text style={styles.scopeHint}> (구·시·군)</Text>
+      </Text>
       <Text style={styles.meta}>
-        법정동코드 {address.lawdCd}
+        시군구코드 {address.lawdCd}
         {address.mock ? ' · 데모 데이터' : ''}
       </Text>
     </View>
@@ -68,6 +76,16 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
     color: '#5c6670',
+  },
+  scope: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#c45c26',
+  },
+  scopeHint: {
+    fontWeight: '600',
+    color: '#8a6a4b',
   },
   skel: {
     height: 12,

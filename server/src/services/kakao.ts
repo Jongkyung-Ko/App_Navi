@@ -1,5 +1,6 @@
 import type { ReverseGeocodeResult } from '../types.js';
 import { cacheGet, cacheSet } from './cache.js';
+import { resolveSigunguFromRegions } from './sigungu.js';
 
 const KAKAO_LOCAL_BASE = 'https://dapi.kakao.com/v2/local';
 
@@ -35,6 +36,7 @@ function mockGeocode(lat: number, lng: number): ReverseGeocodeResult {
     region2: '중구',
     region3: '태평로1가',
     lawdCd: '11140',
+    sigunguLabel: '서울특별시 중구',
     lat,
     lng,
     mock: true,
@@ -42,7 +44,8 @@ function mockGeocode(lat: number, lng: number): ReverseGeocodeResult {
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResult> {
-  const cacheKey = `geo:${lat.toFixed(5)},${lng.toFixed(5)}`;
+  // Same 시군구 neighborhood shares cache; MOLIT queries are always by 5-digit LAWD_CD
+  const cacheKey = `geo:sgg:${lat.toFixed(4)},${lng.toFixed(4)}`;
   const cached = cacheGet<ReverseGeocodeResult>(cacheKey);
   if (cached) return cached;
 
@@ -76,28 +79,36 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
 
   const addrJson = (await addrRes.json()) as { documents?: KakaoAddressDoc[] };
   const regionJson = (await regionRes.json()) as { documents?: KakaoRegionDoc[] };
-
+  const docs = regionJson.documents ?? [];
   const doc = addrJson.documents?.[0];
-  const bCode =
-    regionJson.documents?.find((d) => d.region_type === 'B')?.code ??
-    regionJson.documents?.[0]?.code ??
-    doc?.address?.b_code ??
-    '';
 
-  const lawdCd = bCode.slice(0, 5);
-  if (!lawdCd || lawdCd.length < 5) {
-    throw new Error('Failed to resolve LAWD_CD from coordinates');
+  let resolved;
+  try {
+    resolved = resolveSigunguFromRegions(docs);
+  } catch {
+    const fallbackCode = (doc?.address?.b_code ?? '').replace(/\D/g, '').slice(0, 5);
+    if (fallbackCode.length !== 5) {
+      throw new Error('Failed to resolve 시군구(LAWD_CD) from coordinates');
+    }
+    const region1 = doc?.address?.region_1depth_name ?? '';
+    const region2 = doc?.address?.region_2depth_name ?? '';
+    resolved = {
+      lawdCd: fallbackCode,
+      region1,
+      region2,
+      region3: doc?.address?.region_3depth_name ?? '',
+      sigunguLabel: [region1, region2].filter(Boolean).join(' ') || fallbackCode,
+    };
   }
-
-  const region = regionJson.documents?.find((d) => d.region_type === 'B') ?? regionJson.documents?.[0];
 
   const result: ReverseGeocodeResult = {
     roadAddress: doc?.road_address?.address_name ?? null,
     jibunAddress: doc?.address?.address_name ?? null,
-    region1: region?.region_1depth_name ?? doc?.address?.region_1depth_name ?? '',
-    region2: region?.region_2depth_name ?? doc?.address?.region_2depth_name ?? '',
-    region3: region?.region_3depth_name ?? doc?.address?.region_3depth_name ?? '',
-    lawdCd,
+    region1: resolved.region1,
+    region2: resolved.region2,
+    region3: resolved.region3,
+    lawdCd: resolved.lawdCd,
+    sigunguLabel: resolved.sigunguLabel,
     lat,
     lng,
   };

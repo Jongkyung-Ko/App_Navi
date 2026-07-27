@@ -77,7 +77,10 @@ export interface ReverseGeocodeResult {
   region1: string;
   region2: string;
   region3: string;
+  /** MOLIT 시군구 코드(5자리) — 도시 구 / 지방 시·군 */
   lawdCd: string;
+  /** 조사 범위 표시용 (예: 서울특별시 강남구) */
+  sigunguLabel?: string;
   lat: number;
   lng: number;
   mock?: boolean;

@@ -23,7 +23,7 @@ tradesRouter.get('/', async (req, res) => {
     const includeJeonse = req.query.includeJeonse !== 'false';
 
     if (!/^\d{5}$/.test(lawdCd)) {
-      res.status(400).json({ error: 'lawdCd must be a 5-digit region code' });
+      res.status(400).json({ error: 'lawdCd must be a 5-digit 시군구 (구·시·군) code' });
       return;
     }
 

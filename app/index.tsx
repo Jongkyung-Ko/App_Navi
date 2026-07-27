@@ -484,10 +484,12 @@ export default function HomeScreen() {
       <AddressCard address={activeAddress} loading={loading || investigating} />
       {usingMapFocus ? (
         <Text style={styles.focusHint}>
-          지도에서 선택한 위치 기준 · 길게 눌러 다른 지점을 조사할 수 있습니다
+          선택한 지점의 시군구(구·시·군) 범위로 매매가를 조사합니다
         </Text>
       ) : (
-        <Text style={styles.focusHint}>지도를 길게 누르면 그 위치로 시세를 조사합니다</Text>
+        <Text style={styles.focusHint}>
+          현재 위치 또는 길게 누른 지점의 시군구(구·시·군) 단위로 매매가를 조사합니다
+        </Text>
       )}
       <ErrorBanner message={error ?? listError} />
       <ErrorBanner message={pwa.message} tone="info" />
@@ -561,7 +563,9 @@ export default function HomeScreen() {
                 lawdCd: activeAddress.lawdCd,
                 lat: String(lat),
                 lng: String(lng),
-                region: `${activeAddress.region1} ${activeAddress.region2}`,
+                region:
+                  activeAddress.sigunguLabel ??
+                  `${activeAddress.region1} ${activeAddress.region2}`,
                 ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             });
@@ -575,7 +579,7 @@ export default function HomeScreen() {
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>주변 단지 시세</Text>
         <Text style={styles.sectionSub}>
-          매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
+          시군구(구·시·군) 단위 · 매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
         </Text>
       </View>
 
