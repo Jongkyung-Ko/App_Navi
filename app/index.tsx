@@ -51,7 +51,7 @@ export default function HomeScreen() {
   const [jsKey, setJsKey] = useState<string | null>(null);
   const [complexes, setComplexes] = useState<ComplexSummary[]>([]);
   const [availableAreaTargets, setAvailableAreaTargets] = useState<number[]>([]);
-  const [areaTarget, setAreaTarget] = useState<number | undefined>(undefined);
+  const [areaTarget, setAreaTarget] = useState<number | undefined>(84);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -465,6 +465,15 @@ export default function HomeScreen() {
           height={340}
           onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
         />
+        <PwaInstallButton
+          compact
+          installed={pwa.isInstalled}
+          installing={pwa.installing}
+          onPress={() => {
+            pwa.clearMessage();
+            void pwa.install();
+          }}
+        />
         <Pressable
           accessibilityLabel="현재 위치로 이동"
           style={[styles.locateBtn, investigating && styles.locateBtnDisabled]}
@@ -493,15 +502,6 @@ export default function HomeScreen() {
       )}
       <ErrorBanner message={error ?? listError} />
       <ErrorBanner message={pwa.message} tone="info" />
-
-      <PwaInstallButton
-        installed={pwa.isInstalled}
-        installing={pwa.installing}
-        onPress={() => {
-          pwa.clearMessage();
-          void pwa.install();
-        }}
-      />
 
       <PwaInstallPrompt
         visible={pwa.showFirstVisit}

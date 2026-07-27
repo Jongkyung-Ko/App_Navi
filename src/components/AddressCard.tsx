@@ -47,7 +47,7 @@ export function AddressCard({ address, loading }: AddressCardProps) {
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
-    marginTop: -28,
+    marginTop: 14,
     padding: 16,
     backgroundColor: '#fffaf4',
     borderRadius: 14,

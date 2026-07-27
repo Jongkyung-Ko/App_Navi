@@ -58,6 +58,7 @@ type ButtonProps = {
   visible?: boolean;
   installing?: boolean;
   installed?: boolean;
+  compact?: boolean;
   onPress: () => void;
 };
 
@@ -65,18 +66,31 @@ export function PwaInstallButton({
   visible = true,
   installing,
   installed,
+  compact = false,
   onPress,
 }: ButtonProps) {
   if (Platform.OS !== 'web' || !visible) return null;
 
+  const label = installed ? '추가됨' : installing ? '추가 중' : '바로가기';
+
   return (
     <Pressable
-      style={[styles.homeBtn, (installing || installed) && styles.disabled]}
+      accessibilityLabel={installed ? '바로가기 추가됨' : '바로가기 추가'}
+      style={[
+        compact ? styles.compactBtn : styles.homeBtn,
+        installed && styles.installedBtn,
+        installing && styles.disabled,
+      ]}
       disabled={installing || installed}
       onPress={onPress}
     >
-      <Text style={styles.homeBtnText}>
-        {installed ? '바로가기 추가됨' : installing ? '추가하는 중…' : '바로가기 추가'}
+      <Text
+        style={[
+          compact ? styles.compactBtnText : styles.homeBtnText,
+          installed && styles.installedBtnText,
+        ]}
+      >
+        {label}
       </Text>
     </Pressable>
   );
@@ -151,6 +165,30 @@ const styles = StyleSheet.create({
     color: '#1a2332',
     fontWeight: '800',
     fontSize: 14,
+  },
+  compactBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 6,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#1a2332',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  compactBtnText: {
+    color: '#1a2332',
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  installedBtn: {
+    borderColor: '#9aa3ad',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  installedBtnText: {
+    color: '#6b7580',
   },
   disabled: {
     opacity: 0.55,
