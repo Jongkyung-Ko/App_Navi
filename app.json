@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "App Navi",
+    "slug": "App_Navi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "appnavi",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "현재 위치와 주변 아파트 시세를 보여주기 위해 위치 권한이 필요합니다."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.appnavi.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "현재 위치와 주변 아파트 시세를 보여주기 위해 위치 권한이 필요합니다."
+      }
+    },
+    "android": {
+      "package": "com.appnavi.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#F4F1EA",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:3001",
+      "eas": {
+        "projectId": "app-navi-local"
+      }
+    }
+  }
+}
