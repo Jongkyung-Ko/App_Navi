@@ -450,15 +450,8 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#c45c26" />}
     >
-      <View style={styles.mapShell}>
-        <KakaoMapView
-          lat={lat}
-          lng={lng}
-          jsKey={jsKey}
-          markers={mapMarkers}
-          height={340}
-          onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
-        />
+      <View style={styles.topBar}>
+        <View style={styles.topBarSpacer} />
         <PwaInstallButton
           compact
           installed={pwa.isInstalled}
@@ -468,6 +461,17 @@ export default function HomeScreen() {
             void pwa.install();
           }}
         />
+      </View>
+
+      <View style={styles.mapShell}>
+        <KakaoMapView
+          lat={lat}
+          lng={lng}
+          jsKey={jsKey}
+          markers={mapMarkers}
+          height={340}
+          onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
+        />
         <Pressable
           accessibilityLabel="현재 위치로 이동"
           style={[styles.locateBtn, investigating && styles.locateBtnDisabled]}
@@ -475,7 +479,6 @@ export default function HomeScreen() {
           onPress={() => void goToMyLocation()}
         >
           <Text style={styles.locateBtnGlyph}>◎</Text>
-          <Text style={styles.locateBtnText}>현재 위치</Text>
         </Pressable>
         {investigating || (listLoading && usingMapFocus) ? (
           <View style={styles.mapBusy}>
@@ -617,37 +620,43 @@ const styles = StyleSheet.create({
   mapShell: {
     position: 'relative',
   },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+    minHeight: 32,
+  },
+  topBarSpacer: {
+    flex: 1,
+  },
   locateBtn: {
     position: 'absolute',
     left: 10,
-    bottom: 12,
+    bottom: 14,
     zIndex: 5,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(26, 35, 50, 0.92)',
-    borderRadius: 22,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
   },
   locateBtnDisabled: {
     opacity: 0.5,
   },
   locateBtnGlyph: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
-  },
-  locateBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
   },
   mapBusy: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 52,
+    left: 56,
+    right: 56,
+    top: 12,
     alignItems: 'center',
     zIndex: 5,
   },
@@ -659,6 +668,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
+    textAlign: 'center',
   },
   focusHint: {
     marginHorizontal: 16,

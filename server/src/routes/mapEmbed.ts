@@ -31,16 +31,19 @@ function buildMapPage(opts: {
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body, #map { margin: 0; height: 100%; width: 100%; background: #e8eef4; }
-    #fallback { display:none; position:absolute; left:8px; bottom:8px; z-index:999;
-      background:rgba(26,35,50,.85); color:#fff; font:12px/1.4 sans-serif; padding:6px 8px; border-radius:6px; }
-    #legend { position:absolute; right:8px; bottom:8px; z-index:999;
-      background:rgba(255,255,255,.92); color:#1a2332; font:11px/1.35 sans-serif;
-      padding:8px 10px; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.18); }
-    #legend .row { display:flex; align-items:center; gap:6px; margin-top:3px; }
-    #legend .dot { width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex:0 0 auto; }
-    #hint { position:absolute; left:8px; top:8px; z-index:999;
-      background:rgba(255,255,255,.9); color:#5c6670; font:11px/1.35 sans-serif;
-      padding:6px 8px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+    #fallback { display:none; position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
+      z-index:999; max-width:70%; text-align:center;
+      background:rgba(26,35,50,.85); color:#fff; font:11px/1.35 sans-serif; padding:5px 8px; border-radius:6px; }
+    #legend { position:absolute; right:8px; bottom:10px; z-index:999; max-width:42%;
+      background:rgba(255,255,255,.94); color:#1a2332; font:10px/1.3 sans-serif;
+      padding:6px 8px; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    #legend .row { display:flex; align-items:center; gap:5px; margin-top:2px; }
+    #legend .dot { width:9px; height:9px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex:0 0 auto; }
+    #hint { position:absolute; left:50%; bottom:52px; top:auto; transform:translateX(-50%); z-index:999;
+      max-width:min(240px, 62%); text-align:center;
+      background:rgba(255,255,255,.94); color:#5c6670; font:11px/1.35 sans-serif;
+      padding:5px 10px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.12); pointer-events:none; }
+    .leaflet-bottom.leaflet-right { margin-bottom: 4px; }
     .spot {
       border-radius: 50%;
       box-sizing: border-box;
@@ -143,7 +146,8 @@ function buildMapPage(opts: {
     function showLeaflet(note) {
       if (ready) return;
       ready = true;
-      const map = L.map('map').setView([lat, lng], 15);
+      const map = L.map('map', { zoomControl: false }).setView([lat, lng], 15);
+      L.control.zoom({ position: 'topright' }).addTo(map);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
@@ -214,6 +218,8 @@ function buildMapPage(opts: {
           ready = true;
           const center = new kakao.maps.LatLng(lat, lng);
           const map = new kakao.maps.Map(document.getElementById('map'), { center: center, level: 4 });
+          const zoomControl = new kakao.maps.ZoomControl();
+          map.addControl(zoomControl, kakao.maps.ControlPosition.TOPRIGHT);
           new kakao.maps.Marker({ map: map, position: center, title: '기준 위치' });
           markers.forEach(function(m) { addKakaoSpot(map, m); });
           kakao.maps.event.addListener(map, 'rightclick', function(mouseEvent) {

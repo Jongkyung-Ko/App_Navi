@@ -71,7 +71,7 @@ export function PwaInstallButton({
 }: ButtonProps) {
   if (Platform.OS !== 'web' || !visible) return null;
 
-  const label = installed ? '추가됨' : installing ? '추가 중' : '바로가기';
+  const label = installed ? '앱' : installing ? '…' : '추가';
 
   return (
     <Pressable
@@ -90,7 +90,7 @@ export function PwaInstallButton({
           installed && styles.installedBtnText,
         ]}
       >
-        {label}
+        {compact ? label : installed ? '추가됨' : installing ? '추가 중' : '바로가기'}
       </Text>
     </Pressable>
   );
@@ -167,21 +167,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   compactBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 6,
     backgroundColor: 'rgba(255,255,255,0.96)',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#1a2332',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderColor: '#c5ced6',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   compactBtnText: {
-    color: '#1a2332',
+    color: '#5c6670',
     fontWeight: '700',
-    fontSize: 11,
+    fontSize: 10,
   },
   installedBtn: {
     borderColor: '#9aa3ad',
