@@ -84,6 +84,8 @@ export interface TradesResponse {
   jeonseCount?: number;
   complexCount: number;
   complexes: ComplexSummary[];
+  areaBands?: AreaBand[];
+  selectedAreaTarget?: number | null;
   mock?: boolean;
 }
 

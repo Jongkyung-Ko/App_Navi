@@ -82,7 +82,7 @@ export async function fetchNearbyComplexes(params: {
     months: String(params.months ?? 3),
   });
   if (params.q) search.set('q', params.q);
-  if (params.areaTarget) search.set('areaTarget', String(params.areaTarget));
+  if (params.areaTarget !== undefined) search.set('areaTarget', String(params.areaTarget));
   if (params.enrichCoords) search.set('enrichCoords', 'true');
   if (params.lat !== undefined) search.set('lat', String(params.lat));
   if (params.lng !== undefined) search.set('lng', String(params.lng));
@@ -108,6 +108,6 @@ export async function fetchComplexDetail(params: {
     years: String(params.years ?? 10),
   });
   if (params.dong) search.set('dong', params.dong);
-  if (params.areaTarget) search.set('areaTarget', String(params.areaTarget));
+  if (params.areaTarget !== undefined) search.set('areaTarget', String(params.areaTarget));
   return request(`/api/trades/complex?${search.toString()}`, { timeoutMs: 120000 });
 }

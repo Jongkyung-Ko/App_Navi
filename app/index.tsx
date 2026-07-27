@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddressCard } from '../src/components/AddressCard';
+import { AreaBandChips } from '../src/components/AreaBandChips';
 import { ComplexList } from '../src/components/ComplexList';
 import { ErrorBanner } from '../src/components/ErrorBanner';
 import { FeatureToggle } from '../src/components/FeatureToggle';
@@ -25,6 +26,7 @@ import {
 } from '../src/services/location';
 import { speakNarration, stopNarration } from '../src/services/speech';
 import type { ComplexSummary, UserLocation } from '../src/types';
+import { formatAreaBandLabel } from '../src/utils/areaBands';
 import { distanceMeters } from '../src/utils/geo';
 import {
   buildNearbyNarration,
@@ -42,6 +44,8 @@ export default function HomeScreen() {
   const { location, address, loading, error, refresh } = useCurrentLocation();
   const [jsKey, setJsKey] = useState<string | null>(null);
   const [complexes, setComplexes] = useState<ComplexSummary[]>([]);
+  const [availableAreaTargets, setAvailableAreaTargets] = useState<number[]>([]);
+  const [areaTarget, setAreaTarget] = useState<number | undefined>(undefined);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,9 +61,11 @@ export default function HomeScreen() {
   const moveBusy = useRef(false);
   const locationRef = useRef(location);
   const addressRef = useRef(address);
+  const areaTargetRef = useRef(areaTarget);
 
   locationRef.current = location;
   addressRef.current = address;
+  areaTargetRef.current = areaTarget;
 
   useEffect(() => {
     void fetchKakaoJsKey()
@@ -73,10 +79,13 @@ export default function HomeScreen() {
       lat?: number;
       lng?: number;
       quiet?: boolean;
+      areaTarget?: number;
     }) => {
       const lawdCd = opts?.lawdCd ?? addressRef.current?.lawdCd;
       const lat = opts?.lat ?? locationRef.current?.lat;
       const lng = opts?.lng ?? locationRef.current?.lng;
+      const selectedArea =
+        opts && 'areaTarget' in opts ? opts.areaTarget : areaTargetRef.current;
       if (!lawdCd || lat === undefined || lng === undefined) return;
 
       if (!opts?.quiet) setListLoading(true);
@@ -88,8 +97,12 @@ export default function HomeScreen() {
           enrichCoords: true,
           lat,
           lng,
+          areaTarget: selectedArea,
         });
         setComplexes(res.complexes.slice(0, 20));
+        if (res.areaBands?.length) {
+          setAvailableAreaTargets(res.areaBands.map((b) => b.targetM2));
+        }
       } catch (err) {
         setListError(err instanceof Error ? err.message : '시세 조회 실패');
       } finally {
@@ -101,7 +114,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     void loadComplexes();
-  }, [loadComplexes, address?.lawdCd, location?.lat, location?.lng]);
+  }, [loadComplexes, address?.lawdCd, location?.lat, location?.lng, areaTarget]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -110,7 +123,14 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [refresh, loadComplexes]);
 
-  const narration = useMemo(() => buildNearbyNarration(complexes), [complexes]);
+  const narration = useMemo(
+    () =>
+      buildNearbyNarration(
+        complexes,
+        areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : undefined,
+      ),
+    [complexes, areaTarget],
+  );
 
   const speakScript = useCallback((script: string) => {
     setSpeaking(true);
@@ -143,9 +163,9 @@ export default function HomeScreen() {
     }
     if (listLoading || complexes.length === 0) return;
     playNarration();
-    // Re-speak on toggle / first data only; move-watch handles Top3 change announces.
+    // Re-speak on toggle / area change / first ready data; move-watch handles Top3 change announces.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrationOn, listLoading, complexes.length]);
+  }, [narrationOn, listLoading, areaTarget, complexes.length]);
 
   // After a move-triggered reload, announce only if Top 3 changed.
   useEffect(() => {
@@ -282,6 +302,16 @@ export default function HomeScreen() {
     setMoveWatchOn((prev) => !prev);
   };
 
+  const onChangeAreaTarget = (next: number | undefined) => {
+    narrationFingerprint.current = null;
+    announcedTop3Key.current = null;
+    setAreaTarget(next);
+  };
+
+  const areaNavParam = areaTarget !== undefined ? String(areaTarget) : undefined;
+  const areaFilterLabel =
+    areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
+
   const mapMarkers = useMemo(
     () =>
       complexes
@@ -325,9 +355,15 @@ export default function HomeScreen() {
         activeColor="#1a2332"
       />
 
+      <AreaBandChips
+        value={areaTarget}
+        onChange={onChangeAreaTarget}
+        availableTargets={availableAreaTargets}
+      />
+
       {(narrationOn || moveWatchOn) && narration.top3.length > 0 ? (
         <View style={styles.narrationCard}>
-          <Text style={styles.narrationTitle}>매매가 Top 3</Text>
+          <Text style={styles.narrationTitle}>매매가 Top 3 · {areaFilterLabel}</Text>
           {narration.top3.map((c, i) => (
             <Text key={c.id} style={styles.narrationRow}>
               {i + 1}. {c.aptName} · {formatManwonSpoken(c.medianPrice)}
@@ -356,6 +392,7 @@ export default function HomeScreen() {
                 lat: String(lat),
                 lng: String(lng),
                 region: `${address.region1} ${address.region2}`,
+                ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             });
           }}
@@ -367,7 +404,9 @@ export default function HomeScreen() {
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>주변 단지 시세</Text>
-        <Text style={styles.sectionSub}>동일 시군구 · 최근 3개월 실거래 기준</Text>
+        <Text style={styles.sectionSub}>
+          동일 시군구 · 최근 3개월 · {areaFilterLabel}
+        </Text>
       </View>
 
       {listLoading && complexes.length === 0 ? (
@@ -375,7 +414,11 @@ export default function HomeScreen() {
       ) : (
         <ComplexList
           items={complexes.slice(0, 8)}
-          emptyMessage="이 지역에 최근 아파트 실거래가 없습니다."
+          emptyMessage={
+            areaTarget !== undefined
+              ? `이 지역에 ${areaFilterLabel} 최근 실거래가 없습니다.`
+              : '이 지역에 최근 아파트 실거래가 없습니다.'
+          }
           onPress={(item) =>
             router.push({
               pathname: '/complex/[id]',
@@ -384,6 +427,7 @@ export default function HomeScreen() {
                 lawdCd: address?.lawdCd ?? '',
                 aptName: item.aptName,
                 dong: item.dong,
+                ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             })
           }

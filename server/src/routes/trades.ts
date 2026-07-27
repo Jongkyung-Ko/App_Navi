@@ -16,7 +16,7 @@ tradesRouter.get('/', async (req, res) => {
     const months = Math.min(12, Math.max(1, Number(req.query.months ?? 3)));
     const q = String(req.query.q ?? '').trim().toLowerCase();
     const areaTarget = req.query.areaTarget ? Number(req.query.areaTarget) : undefined;
-    const areaTolerance = req.query.areaTolerance ? Number(req.query.areaTolerance) : 5;
+    const areaTolerance = req.query.areaTolerance ? Number(req.query.areaTolerance) : 7;
     const enrichCoords = req.query.enrichCoords === 'true';
     const lat = req.query.lat ? Number(req.query.lat) : undefined;
     const lng = req.query.lng ? Number(req.query.lng) : undefined;
@@ -34,6 +34,7 @@ tradesRouter.get('/', async (req, res) => {
       includeJeonse ? 6 : 6,
     );
     const jeonseData = includeJeonse ? jeonse : [];
+    const areaBands = extractAreaBands(sales, jeonseData);
 
     const areaFilter =
       areaTarget !== undefined && Number.isFinite(areaTarget)
@@ -59,6 +60,8 @@ tradesRouter.get('/', async (req, res) => {
       jeonseCount: jeonseData.length,
       complexCount: complexes.length,
       complexes,
+      areaBands,
+      selectedAreaTarget: areaTarget ?? null,
       mock: process.env.MOLIT_SERVICE_KEY?.startsWith('your_') === true,
     });
   } catch (err) {
@@ -76,7 +79,7 @@ tradesRouter.get('/complex', async (req, res) => {
     const years = Math.min(10, Math.max(1, Number(req.query.years ?? 10)));
     const months = years * 12;
     const areaTarget = req.query.areaTarget ? Number(req.query.areaTarget) : undefined;
-    const areaTolerance = req.query.areaTolerance ? Number(req.query.areaTolerance) : 5;
+    const areaTolerance = req.query.areaTolerance ? Number(req.query.areaTolerance) : 7;
 
     if (!/^\d{5}$/.test(lawdCd) || !aptName) {
       res.status(400).json({ error: 'lawdCd and aptName are required' });

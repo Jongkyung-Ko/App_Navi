@@ -27,6 +27,12 @@ export default function ComplexDetailScreen() {
   const [areaTarget, setAreaTarget] = useState<number | undefined>(
     Number.isFinite(initialArea) ? initialArea : undefined,
   );
+
+  useEffect(() => {
+    const next = params.areaTarget ? Number(params.areaTarget) : undefined;
+    setAreaTarget(Number.isFinite(next as number) ? next : undefined);
+  }, [params.areaTarget]);
+
   const [complex, setComplex] = useState<ComplexSummary | null>(null);
   const [areaBands, setAreaBands] = useState<AreaBand[]>([]);
   const [loading, setLoading] = useState(true);

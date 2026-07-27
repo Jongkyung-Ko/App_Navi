@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,17 +8,13 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { AreaBandChips } from '../src/components/AreaBandChips';
 import { ComplexList } from '../src/components/ComplexList';
 import { ErrorBanner } from '../src/components/ErrorBanner';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { fetchNearbyComplexes } from '../src/services/api';
 import type { ComplexSummary } from '../src/types';
-
-const AREA_PRESETS = [
-  { label: '전체', value: undefined },
-  { label: '59㎡', value: 59 },
-  { label: '84㎡', value: 84 },
-] as const;
+import { formatAreaBandLabel } from '../src/utils/areaBands';
 
 export default function ComplexesScreen() {
   const router = useRouter();
@@ -28,14 +23,24 @@ export default function ComplexesScreen() {
     lat?: string;
     lng?: string;
     region?: string;
+    areaTarget?: string;
   }>();
 
+  const initialArea = params.areaTarget ? Number(params.areaTarget) : undefined;
   const [query, setQuery] = useState('');
-  const [areaTarget, setAreaTarget] = useState<number | undefined>(undefined);
+  const [areaTarget, setAreaTarget] = useState<number | undefined>(
+    Number.isFinite(initialArea) ? initialArea : undefined,
+  );
+  const [availableAreaTargets, setAvailableAreaTargets] = useState<number[]>([]);
   const [items, setItems] = useState<ComplexSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    const next = params.areaTarget ? Number(params.areaTarget) : undefined;
+    setAreaTarget(Number.isFinite(next as number) ? next : undefined);
+  }, [params.areaTarget]);
 
   const load = useCallback(async () => {
     if (!params.lawdCd) {
@@ -56,6 +61,9 @@ export default function ComplexesScreen() {
         lng: params.lng ? Number(params.lng) : undefined,
       });
       setItems(res.complexes);
+      if (res.areaBands?.length) {
+        setAvailableAreaTargets(res.areaBands.map((b) => b.targetM2));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '시세 조회 실패');
     } finally {
@@ -74,6 +82,9 @@ export default function ComplexesScreen() {
     setRefreshing(false);
   };
 
+  const areaNavParam = areaTarget !== undefined ? String(areaTarget) : undefined;
+  const areaLabel = areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
+
   return (
     <ScrollView
       style={styles.screen}
@@ -91,20 +102,13 @@ export default function ComplexesScreen() {
           style={styles.input}
           autoCorrect={false}
         />
-        <View style={styles.chips}>
-          {AREA_PRESETS.map((preset) => {
-            const active = areaTarget === preset.value;
-            return (
-              <Pressable
-                key={preset.label}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setAreaTarget(preset.value)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{preset.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <AreaBandChips
+          embedded
+          value={areaTarget}
+          onChange={setAreaTarget}
+          availableTargets={availableAreaTargets}
+          hint={`현재 필터: ${areaLabel}`}
+        />
       </View>
 
       <ErrorBanner message={error} />
@@ -123,7 +127,7 @@ export default function ComplexesScreen() {
                 lawdCd: params.lawdCd ?? '',
                 aptName: item.aptName,
                 dong: item.dong,
-                areaTarget: areaTarget ? String(areaTarget) : undefined,
+                ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             })
           }
@@ -161,30 +165,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: '#1a2332',
-  },
-  chips: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d7c4b0',
-  },
-  chipActive: {
-    backgroundColor: '#1a2332',
-    borderColor: '#1a2332',
-  },
-  chipText: {
-    color: '#1a2332',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  chipTextActive: {
-    color: '#fff',
   },
 });
