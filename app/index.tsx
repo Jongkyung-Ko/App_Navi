@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -14,9 +14,12 @@ import { ComplexList } from '../src/components/ComplexList';
 import { ErrorBanner } from '../src/components/ErrorBanner';
 import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
+import { NarrationToggle } from '../src/components/NarrationToggle';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
 import { fetchKakaoJsKey, fetchNearbyComplexes } from '../src/services/api';
+import { speakNarration, stopNarration } from '../src/services/speech';
 import type { ComplexSummary } from '../src/types';
+import { buildNearbyNarration, formatManwonSpoken } from '../src/utils/narration';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -27,6 +30,9 @@ export default function HomeScreen() {
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [narrationOn, setNarrationOn] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const narrationFingerprint = useRef<string | null>(null);
 
   useEffect(() => {
     void fetchKakaoJsKey()
@@ -65,6 +71,47 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [refresh, loadComplexes]);
 
+  const narration = useMemo(() => buildNearbyNarration(complexes), [complexes]);
+
+  const playNarration = useCallback(
+    (force = false) => {
+      if (complexes.length === 0) return;
+      const fingerprint = narration.script;
+      if (!force && narrationFingerprint.current === fingerprint) return;
+      narrationFingerprint.current = fingerprint;
+      setSpeaking(true);
+      speakNarration(narration.script, {
+        onDone: () => setSpeaking(false),
+        onError: () => setSpeaking(false),
+      });
+    },
+    [complexes.length, narration.script],
+  );
+
+  useEffect(() => {
+    if (!narrationOn) {
+      stopNarration();
+      setSpeaking(false);
+      narrationFingerprint.current = null;
+      return;
+    }
+    if (listLoading || complexes.length === 0) return;
+    playNarration();
+  }, [narrationOn, listLoading, complexes.length, playNarration]);
+
+  useEffect(() => {
+    return () => stopNarration();
+  }, []);
+
+  const onToggleNarration = () => {
+    if (narrationOn) {
+      setNarrationOn(false);
+      return;
+    }
+    narrationFingerprint.current = null;
+    setNarrationOn(true);
+  };
+
   const mapMarkers = useMemo(
     () =>
       complexes
@@ -87,6 +134,29 @@ export default function HomeScreen() {
 
       <AddressCard address={address} loading={loading} />
       <ErrorBanner message={error ?? listError} />
+
+      <NarrationToggle
+        enabled={narrationOn}
+        speaking={speaking}
+        disabled={listLoading && complexes.length === 0}
+        onToggle={onToggleNarration}
+      />
+
+      {narrationOn && narration.top3.length > 0 ? (
+        <View style={styles.narrationCard}>
+          <Text style={styles.narrationTitle}>매매가 Top 3</Text>
+          {narration.top3.map((c, i) => (
+            <Text key={c.id} style={styles.narrationRow}>
+              {i + 1}. {c.aptName} · {formatManwonSpoken(c.medianPrice)}
+            </Text>
+          ))}
+          <Text style={styles.narrationAvg}>
+            매매 평균 {narration.avgSale !== null ? formatManwonSpoken(narration.avgSale) : '-'}
+            {' · '}
+            전세 평균 {narration.avgJeonse !== null ? formatManwonSpoken(narration.avgJeonse) : '-'}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.actions}>
         <Pressable style={styles.primaryBtn} onPress={() => void refresh()}>
@@ -144,6 +214,32 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#f4f1ea',
+  },
+  narrationCard: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#fff8f2',
+    borderWidth: 1,
+    borderColor: '#e8c9b4',
+  },
+  narrationTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#c45c26',
+    marginBottom: 6,
+  },
+  narrationRow: {
+    fontSize: 13,
+    color: '#1a2332',
+    lineHeight: 20,
+  },
+  narrationAvg: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#5c6670',
+    fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
