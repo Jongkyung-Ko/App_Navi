@@ -1,5 +1,13 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import type { YearlyPricePoint } from '../types';
 import { formatManwon } from '../utils/format';
 
@@ -8,12 +16,14 @@ interface PriceHistoryChartProps {
   summary?: string;
 }
 
-const CHART_H = 150;
+const CHART_H = 160;
 const COL_W = 56;
 const DOT = 8;
 
+type SeriesKey = 'sale' | 'jeonse' | 'gap';
+
 type SeriesDef = {
-  key: 'sale' | 'jeonse' | 'gap';
+  key: SeriesKey;
   medianKey: 'saleMedian' | 'jeonseMedian' | 'gap';
   minKey: 'saleMin' | 'jeonseMin' | 'gapMin';
   maxKey: 'saleMax' | 'jeonseMax' | 'gapMax';
@@ -48,29 +58,91 @@ const SERIES: SeriesDef[] = [
     maxKey: 'gapMax',
     color: '#1f6f4a',
     rangeColor: 'rgba(31, 111, 74, 0.55)',
-    label: '매매-전세',
+    label: '갭',
   },
 ];
 
+type VisibleMap = Record<SeriesKey, boolean>;
+
+const DEFAULT_VISIBLE: VisibleMap = { sale: true, jeonse: true, gap: true };
+
+type ScrubState = {
+  index: number;
+  x: number;
+};
+
 export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
+  const [visible, setVisible] = useState<VisibleMap>(DEFAULT_VISIBLE);
+  const [scrub, setScrub] = useState<ScrubState | null>(null);
+  const plotWidthRef = useRef(0);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holding = useRef(false);
+
+  const activeSeries = useMemo(() => SERIES.filter((s) => visible[s.key]), [visible]);
+
   const max = useMemo(() => {
     const vals = yearly.flatMap((y) =>
-      [
-        y.saleMedian,
-        y.saleMin,
-        y.saleMax,
-        y.jeonseMedian,
-        y.jeonseMin,
-        y.jeonseMax,
-        y.gap,
-        y.gapMin,
-        y.gapMax,
-      ].filter((v): v is number => v !== null && Number.isFinite(v) && v > 0),
+      activeSeries.flatMap((s) => [y[s.medianKey], y[s.minKey], y[s.maxKey]]),
     );
-    return Math.max(1, ...vals);
-  }, [yearly]);
+    const positive = vals.filter((v): v is number => v !== null && Number.isFinite(v) && v > 0);
+    return Math.max(1, ...positive);
+  }, [yearly, activeSeries]);
 
   const chartWidth = Math.max(yearly.length * COL_W, COL_W);
+
+  const toggleSeries = (key: SeriesKey) => {
+    setVisible((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (!next.sale && !next.jeonse && !next.gap) return prev;
+      return next;
+    });
+    setScrub(null);
+  };
+
+  const clearHoldTimer = () => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
+
+  const indexFromX = (x: number) => {
+    if (yearly.length === 0) return 0;
+    const clamped = Math.max(0, Math.min(chartWidth - 1, x));
+    return Math.max(0, Math.min(yearly.length - 1, Math.floor(clamped / COL_W)));
+  };
+
+  const beginHold = (x: number) => {
+    clearHoldTimer();
+    holding.current = false;
+    holdTimer.current = setTimeout(() => {
+      holding.current = true;
+      const idx = indexFromX(x);
+      setScrub({ index: idx, x: idx * COL_W + COL_W / 2 });
+    }, 280);
+  };
+
+  const moveHold = (x: number) => {
+    if (!holding.current) return;
+    const idx = indexFromX(x);
+    setScrub({ index: idx, x: idx * COL_W + COL_W / 2 });
+  };
+
+  const endHold = () => {
+    clearHoldTimer();
+    holding.current = false;
+    setScrub(null);
+  };
+
+  const onGrant = (e: GestureResponderEvent) => {
+    beginHold(e.nativeEvent.locationX);
+  };
+
+  const onMove = (e: GestureResponderEvent) => {
+    moveHold(e.nativeEvent.locationX);
+  };
+
+  const scrubPoint = scrub ? yearly[scrub.index] : null;
 
   if (yearly.length === 0) {
     return (
@@ -84,17 +156,39 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
     <View style={styles.wrap}>
       {summary ? <Text style={styles.summary}>{summary}</Text> : null}
 
-      <View style={styles.legend}>
-        {SERIES.map((s) => (
-          <LegendItem key={s.key} color={s.color} rangeColor={s.rangeColor} label={s.label} />
-        ))}
+      <View style={styles.toggles}>
+        {SERIES.map((s) => {
+          const on = visible[s.key];
+          return (
+            <Pressable
+              key={s.key}
+              onPress={() => toggleSeries(s.key)}
+              style={[styles.toggle, on && { backgroundColor: s.color, borderColor: s.color }]}
+            >
+              <Text style={[styles.toggleText, on && styles.toggleTextOn]}>{s.label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
-      <Text style={styles.legendHint}>실선·점 = 중위 · 점선 = 같은 색 계열 min / max</Text>
+      <Text style={styles.legendHint}>
+        시리즈를 눌러 선택 · 길게 누르면 해당 연도 가격 표시 · 점선 = min/max
+      </Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ width: chartWidth }}>
-          <View style={[styles.plot, { height: CHART_H, width: chartWidth }]}>
-            {SERIES.map((series) => (
+          <View
+            style={[styles.plot, { height: CHART_H, width: chartWidth }]}
+            onLayout={(e: LayoutChangeEvent) => {
+              plotWidthRef.current = e.nativeEvent.layout.width;
+            }}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={onGrant}
+            onResponderMove={onMove}
+            onResponderRelease={endHold}
+            onResponderTerminate={endHold}
+          >
+            {activeSeries.map((series) => (
               <React.Fragment key={series.key}>
                 <LineSeries
                   color={series.rangeColor}
@@ -117,46 +211,65 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
                 />
               </React.Fragment>
             ))}
+
+            {scrub && scrubPoint ? (
+              <>
+                <View style={[styles.scrubLine, { left: scrub.x - 0.75 }]} />
+                <View
+                  style={[
+                    styles.scrubCard,
+                    {
+                      left: Math.min(Math.max(8, scrub.x - 70), chartWidth - 148),
+                    },
+                  ]}
+                >
+                  <Text style={styles.scrubYear}>{scrubPoint.year}년</Text>
+                  {activeSeries.map((s) => {
+                    const median = scrubPoint[s.medianKey];
+                    const min = scrubPoint[s.minKey];
+                    const maxV = scrubPoint[s.maxKey];
+                    return (
+                      <View key={s.key} style={styles.scrubRow}>
+                        <View style={[styles.scrubDot, { backgroundColor: s.color }]} />
+                        <Text style={[styles.scrubLabel, { color: s.color }]}>{s.label}</Text>
+                        <Text style={styles.scrubValue}>
+                          {median !== null ? formatManwon(median) : '—'}
+                          {min !== null && maxV !== null
+                            ? ` (${formatManwon(min)}~${formatManwon(maxV)})`
+                            : ''}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
           </View>
 
           <View style={styles.axisRow}>
-            {yearly.map((y) => (
+            {yearly.map((y, idx) => (
               <View key={y.year} style={styles.axisCol}>
-                <Text style={styles.year}>{String(y.year).slice(2)}</Text>
-                <Text style={styles.tip}>{y.saleMedian !== null ? formatManwon(y.saleMedian) : '-'}</Text>
-                <Text style={[styles.tip, styles.tipJeonse]}>
-                  {y.jeonseMedian !== null ? formatManwon(y.jeonseMedian) : '-'}
+                <Text style={[styles.year, scrub?.index === idx && styles.yearActive]}>
+                  {String(y.year).slice(2)}
                 </Text>
-                <Text style={[styles.tip, styles.tipGap]}>
-                  {y.gap !== null ? formatManwon(y.gap) : '-'}
-                </Text>
+                {visible.sale ? (
+                  <Text style={styles.tip}>{y.saleMedian !== null ? formatManwon(y.saleMedian) : '-'}</Text>
+                ) : null}
+                {visible.jeonse ? (
+                  <Text style={[styles.tip, styles.tipJeonse]}>
+                    {y.jeonseMedian !== null ? formatManwon(y.jeonseMedian) : '-'}
+                  </Text>
+                ) : null}
+                {visible.gap ? (
+                  <Text style={[styles.tip, styles.tipGap]}>
+                    {y.gap !== null ? formatManwon(y.gap) : '-'}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </View>
         </View>
       </ScrollView>
-    </View>
-  );
-}
-
-function LegendItem({
-  color,
-  rangeColor,
-  label,
-}: {
-  color: string;
-  rangeColor: string;
-  label: string;
-}) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendLine, { backgroundColor: color }]} />
-      <View style={[styles.legendDot, { backgroundColor: '#fff', borderColor: color }]} />
-      <View style={styles.legendDashRow}>
-        <View style={[styles.legendDash, { backgroundColor: rangeColor }]} />
-        <View style={[styles.legendDash, { backgroundColor: rangeColor }]} />
-      </View>
-      <Text style={styles.legendText}>{label}</Text>
     </View>
   );
 }
@@ -255,7 +368,6 @@ function LineSegment({
   );
 }
 
-/** Draw a dashed stroke between two points using short segments. */
 function DashedLineSegment({
   x1,
   y1,
@@ -331,47 +443,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontWeight: '600',
   },
-  legend: {
+  toggles: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 4,
+    gap: 8,
+    marginBottom: 6,
+  },
+  toggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#d7c4b0',
+    backgroundColor: '#fff',
+  },
+  toggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5c6670',
+  },
+  toggleTextOn: {
+    color: '#fff',
   },
   legendHint: {
     fontSize: 11,
     color: '#8a939c',
     marginBottom: 10,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  legendLine: {
-    width: 12,
-    height: 2,
-    borderRadius: 1,
-  },
-  legendDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    borderWidth: 2,
-  },
-  legendDashRow: {
-    flexDirection: 'row',
-    gap: 2,
-    marginHorizontal: 1,
-  },
-  legendDash: {
-    width: 4,
-    height: 2,
-    borderRadius: 1,
-  },
-  legendText: {
-    fontSize: 12,
-    color: '#5c6670',
-    fontWeight: '600',
   },
   plot: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -386,6 +483,59 @@ const styles = StyleSheet.create({
     borderRadius: DOT / 2,
     borderWidth: 2.5,
   },
+  scrubLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: 'rgba(26, 35, 50, 0.45)',
+    zIndex: 4,
+  },
+  scrubCard: {
+    position: 'absolute',
+    top: 8,
+    width: 140,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1,
+    borderColor: '#d7dee7',
+    zIndex: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  scrubYear: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1a2332',
+    marginBottom: 4,
+  },
+  scrubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  scrubDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  scrubLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    width: 28,
+  },
+  scrubValue: {
+    flex: 1,
+    fontSize: 11,
+    color: '#1a2332',
+    fontWeight: '600',
+  },
   axisRow: {
     flexDirection: 'row',
     marginTop: 8,
@@ -398,6 +548,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#1a2332',
+  },
+  yearActive: {
+    color: '#c45c26',
   },
   tip: {
     marginTop: 2,

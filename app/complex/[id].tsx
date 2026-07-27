@@ -174,7 +174,7 @@ export default function ComplexDetailScreen() {
 
           <Text style={styles.section}>최근 10년 시세</Text>
           <Text style={styles.sectionHint}>
-            {selectedLabel} · 연도별 중위 매매 · 전세 · 매매-전세 차이
+            {selectedLabel} · 매매/전세/갭 선택 · 길게 누르면 연도별 가격 표시
           </Text>
           {loading ? <LoadingBlock label="면적별 시세 다시 집계 중…" /> : null}
           <PriceHistoryChart yearly={complex.yearly ?? []} summary={chartSummary} />
