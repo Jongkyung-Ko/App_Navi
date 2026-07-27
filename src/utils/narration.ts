@@ -73,3 +73,21 @@ export function buildNearbyNarration(complexes: ComplexSummary[]): NarrationStat
 
   return { top3, avgSale, avgJeonse, script };
 }
+
+/** Stable key for Top 3 identity + prices (detect ranking changes). */
+export function top3Fingerprint(top3: ComplexSummary[]): string {
+  return top3.map((c) => `${c.id}:${Math.round(c.medianPrice)}`).join('|');
+}
+
+export function buildTop3ChangedScript(stats: NarrationStats): string {
+  if (stats.top3.length === 0) {
+    return '위치가 바뀌었지만, 주변에 최근 매매 실거래가 있는 단지를 찾지 못했습니다.';
+  }
+  const ranking = stats.top3
+    .map(
+      (c, i) =>
+        `${i + 1}위, ${c.dong} ${c.aptName}, 매매 중간가 ${formatManwonSpoken(c.medianPrice)}.`,
+    )
+    .join(' ');
+  return `위치가 바뀌어 매매가 Top 3가 갱신되었습니다. ${ranking}`;
+}

@@ -12,14 +12,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddressCard } from '../src/components/AddressCard';
 import { ComplexList } from '../src/components/ComplexList';
 import { ErrorBanner } from '../src/components/ErrorBanner';
+import { FeatureToggle } from '../src/components/FeatureToggle';
 import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { NarrationToggle } from '../src/components/NarrationToggle';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
-import { fetchKakaoJsKey, fetchNearbyComplexes } from '../src/services/api';
+import { fetchKakaoJsKey, fetchNearbyComplexes, reverseGeocode } from '../src/services/api';
+import {
+  getCurrentLocation,
+  LocationError,
+  watchLocationChanges,
+} from '../src/services/location';
 import { speakNarration, stopNarration } from '../src/services/speech';
-import type { ComplexSummary } from '../src/types';
-import { buildNearbyNarration, formatManwonSpoken } from '../src/utils/narration';
+import type { ComplexSummary, UserLocation } from '../src/types';
+import { distanceMeters } from '../src/utils/geo';
+import {
+  buildNearbyNarration,
+  buildTop3ChangedScript,
+  formatManwonSpoken,
+  top3Fingerprint,
+} from '../src/utils/narration';
+
+const MOVE_THRESHOLD_M = 100;
+const MOVE_POLL_MS = 30_000;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -31,8 +46,20 @@ export default function HomeScreen() {
   const [listError, setListError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [narrationOn, setNarrationOn] = useState(false);
+  const [moveWatchOn, setMoveWatchOn] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [moveStatus, setMoveStatus] = useState<string | null>(null);
+
   const narrationFingerprint = useRef<string | null>(null);
+  const announcedTop3Key = useRef<string | null>(null);
+  const anchorLoc = useRef<UserLocation | null>(null);
+  const pendingMoveCheck = useRef(false);
+  const moveBusy = useRef(false);
+  const locationRef = useRef(location);
+  const addressRef = useRef(address);
+
+  locationRef.current = location;
+  addressRef.current = address;
 
   useEffect(() => {
     void fetchKakaoJsKey()
@@ -40,29 +67,41 @@ export default function HomeScreen() {
       .catch(() => setJsKey(null));
   }, []);
 
-  const loadComplexes = useCallback(async () => {
-    if (!address?.lawdCd || !location) return;
-    setListLoading(true);
-    setListError(null);
-    try {
-      const res = await fetchNearbyComplexes({
-        lawdCd: address.lawdCd,
-        months: 3,
-        enrichCoords: true,
-        lat: location.lat,
-        lng: location.lng,
-      });
-      setComplexes(res.complexes.slice(0, 20));
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : '시세 조회 실패');
-    } finally {
-      setListLoading(false);
-    }
-  }, [address?.lawdCd, location]);
+  const loadComplexes = useCallback(
+    async (opts?: {
+      lawdCd?: string;
+      lat?: number;
+      lng?: number;
+      quiet?: boolean;
+    }) => {
+      const lawdCd = opts?.lawdCd ?? addressRef.current?.lawdCd;
+      const lat = opts?.lat ?? locationRef.current?.lat;
+      const lng = opts?.lng ?? locationRef.current?.lng;
+      if (!lawdCd || lat === undefined || lng === undefined) return;
+
+      if (!opts?.quiet) setListLoading(true);
+      setListError(null);
+      try {
+        const res = await fetchNearbyComplexes({
+          lawdCd,
+          months: 3,
+          enrichCoords: true,
+          lat,
+          lng,
+        });
+        setComplexes(res.complexes.slice(0, 20));
+      } catch (err) {
+        setListError(err instanceof Error ? err.message : '시세 조회 실패');
+      } finally {
+        if (!opts?.quiet) setListLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadComplexes();
-  }, [loadComplexes]);
+  }, [loadComplexes, address?.lawdCd, location?.lat, location?.lng]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -73,31 +112,158 @@ export default function HomeScreen() {
 
   const narration = useMemo(() => buildNearbyNarration(complexes), [complexes]);
 
+  const speakScript = useCallback((script: string) => {
+    setSpeaking(true);
+    speakNarration(script, {
+      onDone: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
+  }, []);
+
   const playNarration = useCallback(
     (force = false) => {
       if (complexes.length === 0) return;
       const fingerprint = narration.script;
       if (!force && narrationFingerprint.current === fingerprint) return;
       narrationFingerprint.current = fingerprint;
-      setSpeaking(true);
-      speakNarration(narration.script, {
-        onDone: () => setSpeaking(false),
-        onError: () => setSpeaking(false),
-      });
+      announcedTop3Key.current = top3Fingerprint(narration.top3);
+      speakScript(narration.script);
     },
-    [complexes.length, narration.script],
+    [complexes.length, narration, speakScript],
   );
 
   useEffect(() => {
     if (!narrationOn) {
-      stopNarration();
-      setSpeaking(false);
+      if (!moveWatchOn) {
+        stopNarration();
+        setSpeaking(false);
+      }
       narrationFingerprint.current = null;
       return;
     }
     if (listLoading || complexes.length === 0) return;
     playNarration();
-  }, [narrationOn, listLoading, complexes.length, playNarration]);
+    // Re-speak on toggle / first data only; move-watch handles Top3 change announces.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrationOn, listLoading, complexes.length]);
+
+  // After a move-triggered reload, announce only if Top 3 changed.
+  useEffect(() => {
+    if (!pendingMoveCheck.current || !moveWatchOn) return;
+    pendingMoveCheck.current = false;
+
+    const key = top3Fingerprint(narration.top3);
+    if (announcedTop3Key.current !== null && key === announcedTop3Key.current) {
+      setMoveStatus('이동 확인 · Top 3 변동 없음');
+      return;
+    }
+
+    announcedTop3Key.current = key;
+    narrationFingerprint.current = narration.script;
+    setMoveStatus(
+      narration.top3.length > 0
+        ? '이동 감지 · Top 3 갱신, 다시 읽어줍니다'
+        : '이동 확인 · 주변 매매 단지 없음',
+    );
+    speakScript(buildTop3ChangedScript(narration));
+  }, [complexes, narration, speakScript, moveWatchOn]);
+
+  const runMoveCheck = useCallback(async (reason: 'distance' | 'interval' | 'watch') => {
+    if (moveBusy.current) return;
+    moveBusy.current = true;
+    try {
+      const loc = await getCurrentLocation();
+      const prev = anchorLoc.current;
+      const movedM = prev ? distanceMeters(prev, loc) : MOVE_THRESHOLD_M;
+
+      // Interval fallback always checks; watch/distance require ≥100m.
+      if (reason !== 'interval' && movedM < MOVE_THRESHOLD_M) {
+        return;
+      }
+
+      if (reason === 'interval' && prev && movedM < MOVE_THRESHOLD_M) {
+        // Still re-check Top 3 every 30s even if GPS drift is small (user fallback).
+      }
+
+      anchorLoc.current = loc;
+      const geo = await reverseGeocode(loc.lat, loc.lng);
+      pendingMoveCheck.current = true;
+      setMoveStatus(
+        movedM >= MOVE_THRESHOLD_M
+          ? `약 ${Math.round(movedM)}m 이동 · Top 3 확인 중…`
+          : '30초 주기 · Top 3 확인 중…',
+      );
+      await loadComplexes({
+        lawdCd: geo.lawdCd,
+        lat: loc.lat,
+        lng: loc.lng,
+        quiet: true,
+      });
+      // Also sync main location UI when we moved meaningfully.
+      if (movedM >= MOVE_THRESHOLD_M) {
+        await refresh();
+      }
+    } catch (err) {
+      const message =
+        err instanceof LocationError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : '이동 인식 실패';
+      setMoveStatus(message);
+      pendingMoveCheck.current = false;
+    } finally {
+      moveBusy.current = false;
+    }
+  }, [loadComplexes, refresh]);
+
+  useEffect(() => {
+    if (!moveWatchOn) {
+      setMoveStatus(null);
+      return;
+    }
+
+    anchorLoc.current = locationRef.current;
+    announcedTop3Key.current = top3Fingerprint(buildNearbyNarration(complexes).top3);
+    setMoveStatus('이동 인식 On · 100m 이동 또는 30초마다 확인');
+
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
+    const pollId = setInterval(() => {
+      void runMoveCheck('interval');
+    }, MOVE_POLL_MS);
+
+    void watchLocationChanges((loc) => {
+      if (cancelled) return;
+      const prev = anchorLoc.current;
+      if (prev && distanceMeters(prev, loc) < MOVE_THRESHOLD_M) return;
+      void runMoveCheck('watch');
+    })
+      .then((sub) => {
+        if (cancelled) {
+          sub.remove();
+          return;
+        }
+        subscription = sub;
+      })
+      .catch((err) => {
+        const message =
+          err instanceof LocationError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : '위치 감시 시작 실패';
+        setMoveStatus(`${message} · 30초 주기만 사용`);
+      });
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollId);
+      subscription?.remove();
+    };
+    // Seed fingerprint once when enabling; complexes intentionally omitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveWatchOn, runMoveCheck]);
 
   useEffect(() => {
     return () => stopNarration();
@@ -112,6 +278,10 @@ export default function HomeScreen() {
     setNarrationOn(true);
   };
 
+  const onToggleMoveWatch = () => {
+    setMoveWatchOn((prev) => !prev);
+  };
+
   const mapMarkers = useMemo(
     () =>
       complexes
@@ -123,6 +293,10 @@ export default function HomeScreen() {
 
   const lat = location?.lat ?? address?.lat ?? 37.5665;
   const lng = location?.lng ?? address?.lng ?? 126.978;
+
+  const moveHint = moveWatchOn
+    ? moveStatus ?? '100m 이동 또는 30초마다 Top 3 변동을 확인합니다'
+    : 'Off · 켜면 이동 시 Top 3 변화를 소리로 알려줍니다';
 
   return (
     <ScrollView
@@ -142,7 +316,16 @@ export default function HomeScreen() {
         onToggle={onToggleNarration}
       />
 
-      {narrationOn && narration.top3.length > 0 ? (
+      <FeatureToggle
+        title="이동시 인식"
+        enabled={moveWatchOn}
+        hint={moveHint}
+        disabled={!location && !address}
+        onToggle={onToggleMoveWatch}
+        activeColor="#1a2332"
+      />
+
+      {(narrationOn || moveWatchOn) && narration.top3.length > 0 ? (
         <View style={styles.narrationCard}>
           <Text style={styles.narrationTitle}>매매가 Top 3</Text>
           {narration.top3.map((c, i) => (
