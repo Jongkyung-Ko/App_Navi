@@ -32,6 +32,15 @@ export interface YearlyPricePoint {
   jeonseCount: number;
 }
 
+export interface AreaBand {
+  targetM2: number;
+  pyeong: number;
+  label: string;
+  saleCount: number;
+  jeonseCount: number;
+  tolerance: number;
+}
+
 export interface ComplexSummary {
   id: string;
   aptName: string;

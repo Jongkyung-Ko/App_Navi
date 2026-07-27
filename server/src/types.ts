@@ -60,6 +60,81 @@ export interface YearlyPricePoint {
   jeonseCount: number;
 }
 
+export interface AreaBand {
+  /** 대표 전용면적(㎡) */
+  targetM2: number;
+  /** 공급면적 기준 대략 평형 */
+  pyeong: number;
+  /** UI 라벨 예: 84㎡ · 약 34평 */
+  label: string;
+  saleCount: number;
+  jeonseCount: number;
+  tolerance: number;
+}
+
+/** 국내 아파트에서 흔한 전용면적 밴드 */
+export const STANDARD_AREA_BANDS = [49, 59, 74, 84, 99, 114, 134, 164, 198];
+
+export function exclusiveToSupplyPyeong(m2: number): number {
+  // 전용면적 → 대략 공급평형 (전용평 × 1.3)
+  return Math.round((m2 / 3.3058) * 1.3);
+}
+
+export function formatAreaBandLabel(targetM2: number): string {
+  const pyeong = exclusiveToSupplyPyeong(targetM2);
+  return `${Math.round(targetM2)}㎡ · 약 ${pyeong}평`;
+}
+
+export function nearestStandardArea(m2: number, tolerance = 7): number | null {
+  let best: number | null = null;
+  let bestDist = Infinity;
+  for (const std of STANDARD_AREA_BANDS) {
+    const dist = Math.abs(m2 - std);
+    if (dist <= tolerance && dist < bestDist) {
+      best = std;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+export function extractAreaBands(
+  sales: ApartmentTrade[],
+  jeonse: ApartmentTrade[],
+  minCount = 2,
+): AreaBand[] {
+  const buckets = new Map<number, { sale: number; jeonse: number }>();
+
+  for (const t of sales) {
+    if (!t.exclusiveArea) continue;
+    const key = nearestStandardArea(t.exclusiveArea);
+    if (key === null) continue;
+    const b = buckets.get(key) ?? { sale: 0, jeonse: 0 };
+    b.sale += 1;
+    buckets.set(key, b);
+  }
+  for (const t of jeonse) {
+    if (!t.exclusiveArea) continue;
+    const key = nearestStandardArea(t.exclusiveArea);
+    if (key === null) continue;
+    const b = buckets.get(key) ?? { sale: 0, jeonse: 0 };
+    b.jeonse += 1;
+    buckets.set(key, b);
+  }
+
+  return [...buckets.entries()]
+    .map(([targetM2, counts]) => ({
+      targetM2,
+      pyeong: exclusiveToSupplyPyeong(targetM2),
+      label: formatAreaBandLabel(targetM2),
+      saleCount: counts.sale,
+      jeonseCount: counts.jeonse,
+      tolerance: 7,
+    }))
+    .filter((b) => b.saleCount + b.jeonseCount >= minCount)
+    .sort((a, b) => a.targetM2 - b.targetM2);
+}
+
 export interface ReverseGeocodeResult {
   roadAddress: string | null;
   jibunAddress: string | null;

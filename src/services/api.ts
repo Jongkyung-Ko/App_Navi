@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import type { ComplexSummary, ReverseGeocodeResult, TradesResponse } from '../types';
+import type { AreaBand, ComplexSummary, ReverseGeocodeResult, TradesResponse } from '../types';
 
 function resolveApiBase(): string {
   // Set at build time for production (empty string = same-origin).
@@ -95,7 +95,13 @@ export async function fetchComplexDetail(params: {
   dong?: string;
   years?: number;
   areaTarget?: number;
-}): Promise<{ complex: ComplexSummary; months: string[]; years: number }> {
+}): Promise<{
+  complex: ComplexSummary;
+  months: string[];
+  years: number;
+  areaBands: AreaBand[];
+  selectedAreaTarget: number | null;
+}> {
   const search = new URLSearchParams({
     lawdCd: params.lawdCd,
     aptName: params.aptName,

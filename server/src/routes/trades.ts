@@ -3,6 +3,7 @@ import { fetchSaleAndJeonseForMonths } from '../services/molit.js';
 import { searchPlaceKeyword } from '../services/kakao.js';
 import {
   aggregateComplexes,
+  extractAreaBands,
   recentYearMonths,
   type ComplexSummary,
 } from '../types.js';
@@ -106,12 +107,16 @@ tradesRouter.get('/complex', async (req, res) => {
       return;
     }
 
+    const areaBands = extractAreaBands(filteredSales, filteredJeonse);
+
     res.json({
       lawdCd,
       months: monthKeys,
       years,
       tradeCount: filteredSales.length,
       jeonseCount: filteredJeonse.length,
+      selectedAreaTarget: areaTarget ?? null,
+      areaBands,
       complex,
     });
   } catch (err) {

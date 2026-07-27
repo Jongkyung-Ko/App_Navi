@@ -4,6 +4,7 @@ import {
   average,
   buildYearlyComparison,
   changePercent,
+  extractAreaBands,
   formatTrendSummary,
   median,
   pricePerPyeong,
@@ -104,6 +105,21 @@ describe('aggregateComplexes', () => {
     const result = aggregateComplexes(trades, { target: 84, tolerance: 5 });
     expect(result[0].tradeCount).toBe(1);
     expect(result[0].medianPrice).toBe(10000);
+  });
+});
+
+describe('extractAreaBands', () => {
+  it('clusters exclusive areas into labeled pyeong bands', () => {
+    const sales = [
+      trade({ aptName: 'A', price: 10000, exclusiveArea: 84.9 }),
+      trade({ aptName: 'A', price: 11000, exclusiveArea: 84.2 }),
+      trade({ aptName: 'A', price: 8000, exclusiveArea: 59.8 }),
+      trade({ aptName: 'A', price: 8200, exclusiveArea: 59.1 }),
+    ];
+    const bands = extractAreaBands(sales, []);
+    expect(bands.map((b) => b.targetM2)).toEqual([59, 84]);
+    expect(bands[0].label).toContain('평');
+    expect(bands[1].saleCount).toBe(2);
   });
 });
 

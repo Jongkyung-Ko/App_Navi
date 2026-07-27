@@ -1,11 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { ErrorBanner } from '../../src/components/ErrorBanner';
 import { LoadingBlock } from '../../src/components/LoadingBlock';
 import { PriceHistoryChart } from '../../src/components/PriceHistoryChart';
 import { fetchComplexDetail } from '../../src/services/api';
-import type { ComplexSummary } from '../../src/types';
+import type { AreaBand, ComplexSummary } from '../../src/types';
 import { changeColor, formatArea, formatManwon, formatPyeongPrice } from '../../src/utils/format';
 
 export default function ComplexDetailScreen() {
@@ -16,7 +23,12 @@ export default function ComplexDetailScreen() {
     areaTarget?: string;
   }>();
 
+  const initialArea = params.areaTarget ? Number(params.areaTarget) : undefined;
+  const [areaTarget, setAreaTarget] = useState<number | undefined>(
+    Number.isFinite(initialArea) ? initialArea : undefined,
+  );
   const [complex, setComplex] = useState<ComplexSummary | null>(null);
+  const [areaBands, setAreaBands] = useState<AreaBand[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -35,15 +47,16 @@ export default function ComplexDetailScreen() {
         aptName: params.aptName,
         dong: params.dong,
         years: 10,
-        areaTarget: params.areaTarget ? Number(params.areaTarget) : undefined,
+        areaTarget,
       });
       setComplex(res.complex);
+      setAreaBands(res.areaBands ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '상세 조회 실패');
     } finally {
       setLoading(false);
     }
-  }, [params.lawdCd, params.aptName, params.dong, params.areaTarget]);
+  }, [params.lawdCd, params.aptName, params.dong, areaTarget]);
 
   useEffect(() => {
     void load();
@@ -59,17 +72,17 @@ export default function ComplexDetailScreen() {
     return <LoadingBlock label="최근 10년 매매·전세 시세를 집계하는 중…" />;
   }
 
+  const selectedLabel =
+    areaTarget !== undefined
+      ? areaBands.find((b) => b.targetM2 === areaTarget)?.label ?? `${areaTarget}㎡`
+      : '전체 면적';
+
   const chartSummary = complex
     ? [
-        complex.medianPrice
-          ? `최근 매매 중위 ${formatManwon(complex.medianPrice)}`
-          : null,
-        complex.medianJeonse !== null
-          ? `전세 중위 ${formatManwon(complex.medianJeonse)}`
-          : null,
-        complex.saleJeonseGap !== null
-          ? `차이 ${formatManwon(complex.saleJeonseGap)}`
-          : null,
+        `${selectedLabel}`,
+        complex.medianPrice ? `매매 ${formatManwon(complex.medianPrice)}` : null,
+        complex.medianJeonse !== null ? `전세 ${formatManwon(complex.medianJeonse)}` : null,
+        complex.saleJeonseGap !== null ? `차이 ${formatManwon(complex.saleJeonseGap)}` : null,
       ]
         .filter(Boolean)
         .join(' · ')
@@ -87,6 +100,29 @@ export default function ComplexDetailScreen() {
         <>
           <Text style={styles.name}>{complex.aptName}</Text>
           <Text style={styles.dong}>{complex.dong}</Text>
+
+          <Text style={styles.section}>면적(평형)</Text>
+          <Text style={styles.sectionHint}>주요 전용면적 기준으로 시세 차트를 나눠 봅니다.</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}
+          >
+            <AreaChip
+              label="전체"
+              active={areaTarget === undefined}
+              onPress={() => setAreaTarget(undefined)}
+            />
+            {areaBands.map((band) => (
+              <AreaChip
+                key={band.targetM2}
+                label={`${band.label}`}
+                meta={`매매 ${band.saleCount} · 전세 ${band.jeonseCount}`}
+                active={areaTarget === band.targetM2}
+                onPress={() => setAreaTarget(band.targetM2)}
+              />
+            ))}
+          </ScrollView>
 
           <View style={styles.stats}>
             <View style={styles.stat}>
@@ -123,30 +159,52 @@ export default function ComplexDetailScreen() {
               </Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statLabel}>전세 건수</Text>
-              <Text style={styles.statValue}>{complex.jeonseCount}건</Text>
+              <Text style={styles.statLabel}>선택 면적</Text>
+              <Text style={styles.statValue} numberOfLines={2}>
+                {selectedLabel}
+              </Text>
             </View>
           </View>
 
           <Text style={styles.section}>최근 10년 시세</Text>
-          <Text style={styles.sectionHint}>연도별 중위 매매 · 전세 · 매매-전세 차이</Text>
+          <Text style={styles.sectionHint}>
+            {selectedLabel} · 연도별 중위 매매 · 전세 · 매매-전세 차이
+          </Text>
+          {loading ? <LoadingBlock label="면적별 시세 다시 집계 중…" /> : null}
           <PriceHistoryChart yearly={complex.yearly ?? []} summary={chartSummary} />
 
           <Text style={styles.section}>최근 매매</Text>
-          <TradeTable
-            rows={complex.recentTrades}
-            empty="매매 내역이 없습니다."
-          />
+          <TradeTable rows={complex.recentTrades} empty="매매 내역이 없습니다." />
 
           <Text style={styles.section}>최근 전세</Text>
           <TradeTable
             rows={complex.recentJeonseTrades ?? []}
             empty="전세 내역이 없습니다."
-            priceLabel="보증금"
           />
         </>
       ) : null}
     </ScrollView>
+  );
+}
+
+function AreaChip({
+  label,
+  meta,
+  active,
+  onPress,
+}: {
+  label: string;
+  meta?: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
+      <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>{label}</Text>
+      {meta ? (
+        <Text style={[styles.chipMeta, active && styles.chipMetaActive]}>{meta}</Text>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -156,7 +214,6 @@ function TradeTable({
 }: {
   rows: ComplexSummary['recentTrades'];
   empty: string;
-  priceLabel?: string;
 }) {
   return (
     <View style={styles.table}>
@@ -200,6 +257,39 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     color: '#6b7580',
+  },
+  chips: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  chip: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d7c4b0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 88,
+  },
+  chipActive: {
+    backgroundColor: '#1a2332',
+    borderColor: '#1a2332',
+  },
+  chipLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1a2332',
+  },
+  chipLabelActive: {
+    color: '#fff',
+  },
+  chipMeta: {
+    marginTop: 3,
+    fontSize: 10,
+    color: '#6b7580',
+  },
+  chipMetaActive: {
+    color: '#c9d2dc',
   },
   stats: {
     flexDirection: 'row',
