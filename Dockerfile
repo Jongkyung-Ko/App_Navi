@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY server/package.json server/package-lock.json ./server/
-RUN npm ci && npm ci --prefix server
+RUN npm install --legacy-peer-deps && npm install --prefix server
 
 COPY . .
 # Same-origin API when served by Express
