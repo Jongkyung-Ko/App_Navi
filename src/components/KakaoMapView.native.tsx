@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import type { WebViewMessageEvent } from 'react-native-webview';
 import { API_BASE_URL } from '../services/api';
 import type { MarkerPoint } from '../utils/mapMarkers';
 
@@ -12,10 +13,20 @@ interface KakaoMapViewProps {
   jsKey: string | null;
   markers?: MarkerPoint[];
   height?: number;
+  onLongPressLocation?: (lat: number, lng: number) => void;
 }
 
 /** iOS / Android: WebView loads server map-embed (Kakao + OSM fallback). */
-export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapViewProps) {
+export function KakaoMapView({
+  lat,
+  lng,
+  markers = [],
+  height = 320,
+  onLongPressLocation,
+}: KakaoMapViewProps) {
+  const handlerRef = useRef(onLongPressLocation);
+  handlerRef.current = onLongPressLocation;
+
   const uri = useMemo(() => {
     const params = new URLSearchParams({
       lat: String(lat),
@@ -39,6 +50,23 @@ export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapV
     return `${API_BASE_URL}/map-embed?${params.toString()}`;
   }, [lat, lng, markers]);
 
+  const onMessage = (event: WebViewMessageEvent) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data) as {
+        type?: string;
+        lat?: number;
+        lng?: number;
+      };
+      if (data.type !== 'appnavi:map-longpress') return;
+      const plat = Number(data.lat);
+      const plng = Number(data.lng);
+      if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+      handlerRef.current?.(plat, plng);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <View style={[styles.wrap, { height }]}>
       <WebView
@@ -50,6 +78,7 @@ export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapV
         scrollEnabled={false}
         setSupportMultipleWindows={false}
         allowsInlineMediaPlayback
+        onMessage={onMessage}
       />
     </View>
   );

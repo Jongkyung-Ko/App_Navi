@@ -1,4 +1,4 @@
-import React, { createElement, useMemo } from 'react';
+import React, { createElement, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { API_BASE_URL } from '../services/api';
 import type { MarkerPoint } from '../utils/mapMarkers';
@@ -11,13 +11,23 @@ interface KakaoMapViewProps {
   jsKey: string | null;
   markers?: MarkerPoint[];
   height?: number;
+  onLongPressLocation?: (lat: number, lng: number) => void;
 }
 
 /**
  * Web map: load embed page from API server (proper origin for Kakao),
  * with OSM Leaflet fallback baked into that page.
  */
-export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapViewProps) {
+export function KakaoMapView({
+  lat,
+  lng,
+  markers = [],
+  height = 320,
+  onLongPressLocation,
+}: KakaoMapViewProps) {
+  const handlerRef = useRef(onLongPressLocation);
+  handlerRef.current = onLongPressLocation;
+
   const src = useMemo(() => {
     const params = new URLSearchParams({
       lat: String(lat),
@@ -40,6 +50,21 @@ export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapV
     }
     return `${API_BASE_URL}/map-embed?${params.toString()}`;
   }, [lat, lng, markers]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if ((data as { type?: string }).type !== 'appnavi:map-longpress') return;
+      const plat = Number((data as { lat?: number }).lat);
+      const plng = Number((data as { lng?: number }).lng);
+      if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+      handlerRef.current?.(plat, plng);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   return (
     <View style={[styles.wrap, { height }]}>

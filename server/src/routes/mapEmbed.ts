@@ -38,6 +38,9 @@ function buildMapPage(opts: {
       padding:8px 10px; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.18); }
     #legend .row { display:flex; align-items:center; gap:6px; margin-top:3px; }
     #legend .dot { width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex:0 0 auto; }
+    #hint { position:absolute; left:8px; top:8px; z-index:999;
+      background:rgba(255,255,255,.9); color:#5c6670; font:11px/1.35 sans-serif;
+      padding:6px 8px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.12); }
     .spot {
       border-radius: 50%;
       box-sizing: border-box;
@@ -48,6 +51,7 @@ function buildMapPage(opts: {
 </head>
 <body>
   <div id="map"></div>
+  <div id="hint">길게 누르면 이 위치로 시세 조사</div>
   <div id="legend">
     <div style="font-weight:700;margin-bottom:2px">시세 · 거래량</div>
     <div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>Top10 고가</div>
@@ -63,6 +67,69 @@ function buildMapPage(opts: {
     const markers = ${markerJson};
     const kakaoKey = '${key}';
     let ready = false;
+
+    function emitLongPress(plat, plng) {
+      const payload = { type: 'appnavi:map-longpress', lat: plat, lng: plng };
+      try {
+        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+        }
+      } catch (e) {}
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(payload, '*');
+        }
+      } catch (e) {}
+    }
+
+    function bindDomLongPress(getLatLng) {
+      const el = document.getElementById('map');
+      let timer = null;
+      let startX = 0;
+      let startY = 0;
+      const clear = function() {
+        if (timer) { clearTimeout(timer); timer = null; }
+      };
+      const start = function(clientX, clientY) {
+        clear();
+        startX = clientX;
+        startY = clientY;
+        timer = setTimeout(function() {
+          timer = null;
+          const ll = getLatLng(clientX, clientY);
+          if (ll) emitLongPress(ll.lat, ll.lng);
+        }, 550);
+      };
+      el.addEventListener('touchstart', function(e) {
+        if (!e.touches || !e.touches[0]) return;
+        start(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: true });
+      el.addEventListener('touchmove', function(e) {
+        if (!e.touches || !e.touches[0] || !timer) return;
+        const dx = e.touches[0].clientX - startX;
+        const dy = e.touches[0].clientY - startY;
+        if (dx * dx + dy * dy > 100) clear();
+      }, { passive: true });
+      el.addEventListener('touchend', clear);
+      el.addEventListener('touchcancel', clear);
+      el.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        start(e.clientX, e.clientY);
+      });
+      el.addEventListener('mousemove', function(e) {
+        if (!timer) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (dx * dx + dy * dy > 100) clear();
+      });
+      el.addEventListener('mouseup', clear);
+      el.addEventListener('mouseleave', clear);
+      el.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        const ll = getLatLng(e.clientX, e.clientY);
+        if (ll) emitLongPress(ll.lat, ll.lng);
+      });
+    }
 
     function spotStyle(m) {
       return {
@@ -81,7 +148,7 @@ function buildMapPage(opts: {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
       }).addTo(map);
-      L.marker([lat, lng]).addTo(map).bindPopup('내 위치');
+      L.marker([lat, lng]).addTo(map).bindPopup('기준 위치');
       markers.forEach(function(m) {
         const s = spotStyle(m);
         L.circleMarker([m.lat, m.lng], {
@@ -91,6 +158,13 @@ function buildMapPage(opts: {
           fillColor: s.fillColor,
           fillOpacity: 1
         }).addTo(map).bindPopup(s.title);
+      });
+      map.on('contextmenu', function(e) {
+        emitLongPress(e.latlng.lat, e.latlng.lng);
+      });
+      bindDomLongPress(function(clientX, clientY) {
+        const p = map.mouseEventToLatLng({ clientX: clientX, clientY: clientY });
+        return p ? { lat: p.lat, lng: p.lng } : null;
       });
       if (note) {
         const el = document.getElementById('fallback');
@@ -140,8 +214,27 @@ function buildMapPage(opts: {
           ready = true;
           const center = new kakao.maps.LatLng(lat, lng);
           const map = new kakao.maps.Map(document.getElementById('map'), { center: center, level: 4 });
-          new kakao.maps.Marker({ map: map, position: center, title: '내 위치' });
+          new kakao.maps.Marker({ map: map, position: center, title: '기준 위치' });
           markers.forEach(function(m) { addKakaoSpot(map, m); });
+          kakao.maps.event.addListener(map, 'rightclick', function(mouseEvent) {
+            const ll = mouseEvent.latLng;
+            emitLongPress(ll.getLat(), ll.getLng());
+          });
+          bindDomLongPress(function(clientX, clientY) {
+            const projection = map.getProjection();
+            if (!projection) return null;
+            const point = new kakao.maps.Point(clientX, clientY);
+            // container coords → latlng via rel to map container
+            const rect = document.getElementById('map').getBoundingClientRect();
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+            const coords = map.getProjection().coordsFromContainerPoint
+              ? map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(x, y))
+              : null;
+            if (coords) return { lat: coords.getLat(), lng: coords.getLng() };
+            // fallback: approximate with center if projection helper missing
+            return { lat: map.getCenter().getLat(), lng: map.getCenter().getLng() };
+          });
         });
       };
       script.onerror = function() {

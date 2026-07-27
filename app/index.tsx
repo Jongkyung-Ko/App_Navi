@@ -21,6 +21,7 @@ import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
 import { usePwaInstall } from '../src/hooks/usePwaInstall';
 import { fetchKakaoJsKey, fetchNearbyComplexes, reverseGeocode } from '../src/services/api';
+import { getNearbyCache, setNearbyCache } from '../src/services/nearbyCache';
 import {
   getCurrentLocation,
   LocationError,
@@ -29,7 +30,8 @@ import {
 import { speakNarration, stopNarration } from '../src/services/speech';
 import type { ComplexSummary, ReverseGeocodeResult, UserLocation } from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
-import { distanceMeters, shiftLocation } from '../src/utils/geo';
+import { confirmMapInvestigate } from '../src/utils/confirm';
+import { distanceMeters } from '../src/utils/geo';
 import { buildStyledMapMarkers, sortBySalePriceDesc } from '../src/utils/mapMarkers';
 import {
   buildNearbyNarration,
@@ -40,8 +42,6 @@ import {
 
 const MOVE_THRESHOLD_M = 100;
 const MOVE_POLL_MS = 30_000;
-/** One arrow tap shifts the map about this many meters east/west. */
-const MAP_PAN_METERS = 500;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -61,13 +61,16 @@ export default function HomeScreen() {
   const [moveStatus, setMoveStatus] = useState<string | null>(null);
   const [mapFocus, setMapFocus] = useState<UserLocation | null>(null);
   const [mapAddress, setMapAddress] = useState<ReverseGeocodeResult | null>(null);
-  const [panning, setPanning] = useState(false);
+  const [investigating, setInvestigating] = useState(false);
+  const [showTop3Card, setShowTop3Card] = useState(false);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
   const anchorLoc = useRef<UserLocation | null>(null);
   const pendingMoveCheck = useRef(false);
   const moveBusy = useRef(false);
+  const pendingSpeakTop3 = useRef(false);
+  const skipAutoLoad = useRef(false);
   const locationRef = useRef(location);
   const addressRef = useRef(address);
   const areaTargetRef = useRef(areaTarget);
@@ -118,9 +121,18 @@ export default function HomeScreen() {
           lng,
           areaTarget: selectedArea,
         });
-        setComplexes(sortBySalePriceDesc(res.complexes).slice(0, 20));
-        if (res.areaBands?.length) {
-          setAvailableAreaTargets(res.areaBands.map((b) => b.targetM2));
+        const ranked = sortBySalePriceDesc(res.complexes).slice(0, 20);
+        setComplexes(ranked);
+        const bandTargets = res.areaBands?.map((b) => b.targetM2) ?? [];
+        if (bandTargets.length) setAvailableAreaTargets(bandTargets);
+        // Cache GPS-based results for "현재 위치" quick restore (server cache still used on fetch).
+        if (!mapFocusRef.current) {
+          setNearbyCache({
+            lawdCd,
+            areaTarget: selectedArea,
+            complexes: ranked,
+            areaBands: bandTargets,
+          });
         }
       } catch (err) {
         setListError(err instanceof Error ? err.message : '시세 조회 실패');
@@ -133,6 +145,10 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!activeAddress?.lawdCd || !activeLoc) return;
+    if (skipAutoLoad.current) {
+      skipAutoLoad.current = false;
+      return;
+    }
     void loadComplexes({
       lawdCd: activeAddress.lawdCd,
       lat: activeLoc.lat,
@@ -141,29 +157,63 @@ export default function HomeScreen() {
   }, [loadComplexes, activeAddress?.lawdCd, activeLoc?.lat, activeLoc?.lng, areaTarget]);
 
   const goToMyLocation = useCallback(async () => {
-    setMapFocus(null);
-    setMapAddress(null);
-    await refresh();
-  }, [refresh]);
+    setInvestigating(true);
+    setListError(null);
+    try {
+      setMapFocus(null);
+      setMapAddress(null);
+      const loc = await getCurrentLocation();
+      const geo = await reverseGeocode(loc.lat, loc.lng);
+      const cached = getNearbyCache(geo.lawdCd, areaTargetRef.current);
+      skipAutoLoad.current = true;
+      await refresh();
+      if (cached && cached.complexes.length > 0) {
+        setComplexes(cached.complexes);
+        if (cached.areaBands.length) setAvailableAreaTargets(cached.areaBands);
+        // Background refresh still hits server MOLIT/Kakao memory cache.
+        void loadComplexes({
+          lawdCd: geo.lawdCd,
+          lat: loc.lat,
+          lng: loc.lng,
+          quiet: true,
+        });
+      } else {
+        skipAutoLoad.current = false;
+        await loadComplexes({
+          lawdCd: geo.lawdCd,
+          lat: loc.lat,
+          lng: loc.lng,
+        });
+      }
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : '현재 위치를 불러오지 못했습니다.');
+      skipAutoLoad.current = false;
+      await refresh();
+    } finally {
+      setInvestigating(false);
+    }
+  }, [loadComplexes, refresh]);
 
-  const panMap = useCallback(
-    async (direction: -1 | 1) => {
-      const base = activeLoc;
-      if (!base || panning) return;
-      setPanning(true);
+  const investigateAt = useCallback(
+    async (plat: number, plng: number) => {
+      const ok = await confirmMapInvestigate();
+      if (!ok) return;
+      setInvestigating(true);
       setListError(null);
       try {
-        const next = shiftLocation(base, direction * MAP_PAN_METERS, 0);
-        const geo = await reverseGeocode(next.lat, next.lng);
-        setMapFocus(next);
+        const geo = await reverseGeocode(plat, plng);
+        pendingSpeakTop3.current = true;
+        setShowTop3Card(true);
+        setMapFocus({ lat: plat, lng: plng });
         setMapAddress(geo);
       } catch (err) {
-        setListError(err instanceof Error ? err.message : '위치를 옮기지 못했습니다.');
+        pendingSpeakTop3.current = false;
+        setListError(err instanceof Error ? err.message : '위치를 조사하지 못했습니다.');
       } finally {
-        setPanning(false);
+        setInvestigating(false);
       }
     },
-    [activeLoc, panning],
+    [],
   );
 
   const onRefresh = useCallback(async () => {
@@ -236,6 +286,32 @@ export default function HomeScreen() {
     );
     speakScript(buildTop3ChangedScript(narration));
   }, [complexes, narration, speakScript, moveWatchOn]);
+
+  // Long-press investigate: speak Top 3 once data is ready.
+  useEffect(() => {
+    if (!pendingSpeakTop3.current) return;
+    if (listLoading || investigating) return;
+    pendingSpeakTop3.current = false;
+    const stats = buildNearbyNarration(
+      complexes,
+      areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : undefined,
+    );
+    narrationFingerprint.current = stats.script;
+    announcedTop3Key.current = top3Fingerprint(stats.top3);
+    setShowTop3Card(true);
+    if (stats.top3.length === 0) {
+      speakScript(stats.script);
+      return;
+    }
+    speakScript(
+      `선택한 위치를 기준으로 매매가 Top 3입니다. ${stats.top3
+        .map(
+          (c, i) =>
+            `${i + 1}위, ${c.dong} ${c.aptName}, 매매 중간가 ${formatManwonSpoken(c.medianPrice)}.`,
+        )
+        .join(' ')}`,
+    );
+  }, [complexes, listLoading, investigating, areaTarget, speakScript]);
 
   const runMoveCheck = useCallback(async (reason: 'distance' | 'interval' | 'watch') => {
     if (moveBusy.current) return;
@@ -381,34 +457,38 @@ export default function HomeScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#c45c26" />}
     >
       <View style={styles.mapShell}>
-        <KakaoMapView lat={lat} lng={lng} jsKey={jsKey} markers={mapMarkers} height={340} />
+        <KakaoMapView
+          lat={lat}
+          lng={lng}
+          jsKey={jsKey}
+          markers={mapMarkers}
+          height={340}
+          onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
+        />
         <Pressable
-          accessibilityLabel="서쪽으로 이동"
-          style={[styles.mapArrow, styles.mapArrowLeft, panning && styles.mapArrowDisabled]}
-          disabled={panning || !activeLoc}
-          onPress={() => void panMap(-1)}
+          accessibilityLabel="현재 위치로 이동"
+          style={[styles.locateBtn, investigating && styles.locateBtnDisabled]}
+          disabled={investigating}
+          onPress={() => void goToMyLocation()}
         >
-          <Text style={styles.mapArrowText}>‹</Text>
+          <Text style={styles.locateBtnGlyph}>◎</Text>
+          <Text style={styles.locateBtnText}>현재 위치</Text>
         </Pressable>
-        <Pressable
-          accessibilityLabel="동쪽으로 이동"
-          style={[styles.mapArrow, styles.mapArrowRight, panning && styles.mapArrowDisabled]}
-          disabled={panning || !activeLoc}
-          onPress={() => void panMap(1)}
-        >
-          <Text style={styles.mapArrowText}>›</Text>
-        </Pressable>
-        {panning ? (
+        {investigating || (listLoading && usingMapFocus) ? (
           <View style={styles.mapBusy}>
             <Text style={styles.mapBusyText}>이 위치 시세 조회 중…</Text>
           </View>
         ) : null}
       </View>
 
-      <AddressCard address={activeAddress} loading={loading || panning} />
+      <AddressCard address={activeAddress} loading={loading || investigating} />
       {usingMapFocus ? (
-        <Text style={styles.focusHint}>지도 기준 위치 · 화살표로 좌우 이동해 시세를 다시 조사합니다</Text>
-      ) : null}
+        <Text style={styles.focusHint}>
+          지도에서 선택한 위치 기준 · 길게 눌러 다른 지점을 조사할 수 있습니다
+        </Text>
+      ) : (
+        <Text style={styles.focusHint}>지도를 길게 누르면 그 위치로 시세를 조사합니다</Text>
+      )}
       <ErrorBanner message={error ?? listError} />
       <ErrorBanner message={pwa.message} tone="info" />
 
@@ -451,7 +531,7 @@ export default function HomeScreen() {
         availableTargets={availableAreaTargets}
       />
 
-      {(narrationOn || moveWatchOn) && narration.top3.length > 0 ? (
+      {(narrationOn || moveWatchOn || showTop3Card) && narration.top3.length > 0 ? (
         <View style={styles.narrationCard}>
           <Text style={styles.narrationTitle}>매매가 Top 3 · {areaFilterLabel}</Text>
           {narration.top3.map((c, i) => (
@@ -535,38 +615,37 @@ const styles = StyleSheet.create({
   mapShell: {
     position: 'relative',
   },
-  mapArrow: {
+  locateBtn: {
     position: 'absolute',
-    top: '50%',
-    marginTop: -22,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(26, 35, 50, 0.88)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5,
-  },
-  mapArrowLeft: {
     left: 10,
+    bottom: 12,
+    zIndex: 5,
+    backgroundColor: 'rgba(26, 35, 50, 0.92)',
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  mapArrowRight: {
-    right: 10,
+  locateBtnDisabled: {
+    opacity: 0.5,
   },
-  mapArrowDisabled: {
-    opacity: 0.45,
-  },
-  mapArrowText: {
+  locateBtnGlyph: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  locateBtnText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '700',
-    marginTop: -2,
   },
   mapBusy: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 12,
+    bottom: 52,
     alignItems: 'center',
     zIndex: 5,
   },
