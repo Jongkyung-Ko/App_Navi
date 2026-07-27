@@ -1,5 +1,6 @@
-import React, { createElement, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { buildMapHtml, type MarkerPoint } from './mapHtml';
 
 export type { MarkerPoint };
@@ -12,23 +13,21 @@ interface KakaoMapViewProps {
   height?: number;
 }
 
-/** Web-only map: iframe (react-native-webview is unsupported on web). */
+/** iOS / Android map via react-native-webview */
 export function KakaoMapView({ lat, lng, jsKey, markers = [], height = 320 }: KakaoMapViewProps) {
   const html = useMemo(() => buildMapHtml(lat, lng, jsKey, markers), [lat, lng, jsKey, markers]);
 
   return (
     <View style={[styles.wrap, { height }]}>
-      {createElement('iframe', {
-        srcDoc: html,
-        title: 'map',
-        style: {
-          border: 'none',
-          width: '100%',
-          height: '100%',
-          display: 'block',
-          backgroundColor: '#e8eef4',
-        },
-      })}
+      <WebView
+        originWhitelist={['*']}
+        source={{ html, baseUrl: Platform.OS === 'android' ? 'https://localhost' : undefined }}
+        style={styles.web}
+        javaScriptEnabled
+        domStorageEnabled
+        scrollEnabled={false}
+        setSupportMultipleWindows={false}
+      />
     </View>
   );
 }
@@ -39,5 +38,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#d5dbe3',
+  },
+  web: {
+    flex: 1,
+    backgroundColor: '#e8eef4',
   },
 });
