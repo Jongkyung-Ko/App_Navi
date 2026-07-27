@@ -2,8 +2,10 @@ import { XMLParser } from 'fast-xml-parser';
 import type { ApartmentTrade } from '../types.js';
 import { cacheGet, cacheSet } from './cache.js';
 
+// Use AptTrade (not AptTradeDev). Many accounts are approved for the standard
+ // trade API only; AptTradeDev often returns bare HTTP 403 for the same key.
 const MOLIT_URL =
-  'https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev';
+  'https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -96,20 +98,26 @@ export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Prom
     return mock;
   }
 
+  // Append serviceKey outside URLSearchParams so Decoding keys are not mangled.
   const params = new URLSearchParams({
-    serviceKey,
     LAWD_CD: lawdCd,
     DEAL_YMD: dealYmd,
     pageNo: '1',
     numOfRows: '1000',
+    _type: 'json',
   });
+  const encodedKey = /%/.test(serviceKey) ? serviceKey : encodeURIComponent(serviceKey);
+  const url = `${MOLIT_URL}?serviceKey=${encodedKey}&${params.toString()}`;
 
-  // data.go.kr keys are often already URL-encoded; avoid double-encoding
-  const url = `${MOLIT_URL}?${params.toString().replace(/%25/g, '%')}`;
-
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: {
+      Accept: 'application/json, application/xml, */*',
+      'User-Agent': 'AppNavi/1.0 (local-dev)',
+    },
+  });
   if (!res.ok) {
-    throw new Error(`MOLIT API HTTP ${res.status}`);
+    const body = (await res.text()).slice(0, 200);
+    throw new Error(`MOLIT API HTTP ${res.status}${body ? `: ${body}` : ''}`);
   }
 
   const text = await res.text();
