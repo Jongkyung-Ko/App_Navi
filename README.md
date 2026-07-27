@@ -25,6 +25,7 @@
 3. REST API 키 → `KAKAO_REST_KEY`
 4. JavaScript 키 → `KAKAO_JS_KEY` (지도 WebView용)
 5. 플랫폼에 Android 패키지 `com.appnavi.mobile` / iOS 번들 `com.appnavi.mobile` 등록
+6. Web 플랫폼에 사이트 도메인 추가: `localhost`, `127.0.0.1` (지도 JS용)
 
 ### 2) 공공데이터포털 (국토부 실거래)
 

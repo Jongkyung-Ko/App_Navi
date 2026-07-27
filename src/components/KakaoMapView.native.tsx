@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { buildMapHtml, type MarkerPoint } from './mapHtml';
+import { API_BASE_URL } from '../services/api';
+import type { MarkerPoint } from './mapHtml';
 
 export type { MarkerPoint };
 
@@ -13,20 +14,39 @@ interface KakaoMapViewProps {
   height?: number;
 }
 
-/** iOS / Android map via react-native-webview */
-export function KakaoMapView({ lat, lng, jsKey, markers = [], height = 320 }: KakaoMapViewProps) {
-  const html = useMemo(() => buildMapHtml(lat, lng, jsKey, markers), [lat, lng, jsKey, markers]);
+/** iOS / Android: WebView loads server map-embed (Kakao + OSM fallback). */
+export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapViewProps) {
+  const uri = useMemo(() => {
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+    });
+    if (markers.length > 0) {
+      params.set(
+        'markers',
+        JSON.stringify(
+          markers.slice(0, 12).map((m) => ({
+            lat: m.lat,
+            lng: m.lng,
+            title: m.title ?? '',
+          })),
+        ),
+      );
+    }
+    return `${API_BASE_URL}/map-embed?${params.toString()}`;
+  }, [lat, lng, markers]);
 
   return (
     <View style={[styles.wrap, { height }]}>
       <WebView
         originWhitelist={['*']}
-        source={{ html, baseUrl: Platform.OS === 'android' ? 'https://localhost' : undefined }}
+        source={{ uri }}
         style={styles.web}
         javaScriptEnabled
         domStorageEnabled
         scrollEnabled={false}
         setSupportMultipleWindows={false}
+        allowsInlineMediaPlayback
       />
     </View>
   );

@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { geocodeRouter } from './routes/geocode.js';
 import { tradesRouter } from './routes/trades.js';
+import { mapEmbedHandler } from './routes/mapEmbed.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -30,6 +31,8 @@ app.get('/api/config', (_req, res) => {
     kakaoJsKey: process.env.KAKAO_JS_KEY?.startsWith('your_') ? null : process.env.KAKAO_JS_KEY ?? null,
   });
 });
+
+app.get('/map-embed', mapEmbedHandler);
 
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/trades', tradesRouter);

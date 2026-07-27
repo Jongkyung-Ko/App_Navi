@@ -1,6 +1,7 @@
 import React, { createElement, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { buildMapHtml, type MarkerPoint } from './mapHtml';
+import { API_BASE_URL } from '../services/api';
+import type { MarkerPoint } from './mapHtml';
 
 export type { MarkerPoint };
 
@@ -13,16 +14,34 @@ interface KakaoMapViewProps {
 }
 
 /**
- * Default / web map renderer.
- * Must NOT import react-native-webview (unsupported on web).
+ * Web map: load embed page from API server (proper origin for Kakao),
+ * with OSM Leaflet fallback baked into that page.
  */
-export function KakaoMapView({ lat, lng, jsKey, markers = [], height = 320 }: KakaoMapViewProps) {
-  const html = useMemo(() => buildMapHtml(lat, lng, jsKey, markers), [lat, lng, jsKey, markers]);
+export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapViewProps) {
+  const src = useMemo(() => {
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+    });
+    if (markers.length > 0) {
+      params.set(
+        'markers',
+        JSON.stringify(
+          markers.slice(0, 12).map((m) => ({
+            lat: m.lat,
+            lng: m.lng,
+            title: m.title ?? '',
+          })),
+        ),
+      );
+    }
+    return `${API_BASE_URL}/map-embed?${params.toString()}`;
+  }, [lat, lng, markers]);
 
   return (
     <View style={[styles.wrap, { height }]}>
       {createElement('iframe', {
-        srcDoc: html,
+        src,
         title: 'map',
         style: {
           border: 'none',
@@ -31,6 +50,7 @@ export function KakaoMapView({ lat, lng, jsKey, markers = [], height = 320 }: Ka
           display: 'block',
           backgroundColor: '#e8eef4',
         },
+        allow: 'geolocation',
       })}
     </View>
   );
