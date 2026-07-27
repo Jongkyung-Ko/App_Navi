@@ -37,7 +37,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "App Navi",
+      "shortName": "App Navi",
+      "description": "내 위치 주변 아파트 매매·전세 시세",
+      "themeColor": "#1a2332",
+      "backgroundColor": "#f4f1ea",
+      "display": "standalone",
+      "lang": "ko"
     },
     "extra": {
       "apiBaseUrl": "http://localhost:3001",

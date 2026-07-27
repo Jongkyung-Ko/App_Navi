@@ -17,7 +17,9 @@ import { FeatureToggle } from '../src/components/FeatureToggle';
 import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { NarrationToggle } from '../src/components/NarrationToggle';
+import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
+import { usePwaInstall } from '../src/hooks/usePwaInstall';
 import { fetchKakaoJsKey, fetchNearbyComplexes, reverseGeocode } from '../src/services/api';
 import {
   getCurrentLocation,
@@ -42,6 +44,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { location, address, loading, error, refresh } = useCurrentLocation();
+  const pwa = usePwaInstall();
   const [jsKey, setJsKey] = useState<string | null>(null);
   const [complexes, setComplexes] = useState<ComplexSummary[]>([]);
   const [availableAreaTargets, setAvailableAreaTargets] = useState<number[]>([]);
@@ -338,6 +341,24 @@ export default function HomeScreen() {
 
       <AddressCard address={address} loading={loading} />
       <ErrorBanner message={error ?? listError} />
+      <ErrorBanner message={pwa.message} tone="info" />
+
+      <PwaInstallButton
+        installed={pwa.isInstalled}
+        installing={pwa.installing}
+        onPress={() => {
+          pwa.clearMessage();
+          void pwa.install();
+        }}
+      />
+
+      <PwaInstallPrompt
+        visible={pwa.showFirstVisit}
+        installing={pwa.installing}
+        isIos={pwa.isIos}
+        onInstall={() => void pwa.install()}
+        onDismiss={() => void pwa.dismissFirstVisit()}
+      />
 
       <NarrationToggle
         enabled={narrationOn}

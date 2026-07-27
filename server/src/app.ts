@@ -53,7 +53,19 @@ export function createApp() {
   const staticDir = staticCandidates.find((p) => fs.existsSync(path.join(p, 'index.html')));
 
   if (staticDir) {
-    app.use(express.static(staticDir));
+    app.use(
+      express.static(staticDir, {
+        setHeaders(res, filePath) {
+          if (filePath.endsWith('.webmanifest')) {
+            res.setHeader('Content-Type', 'application/manifest+json');
+          }
+          if (filePath.endsWith('sw.js')) {
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Service-Worker-Allowed', '/');
+          }
+        },
+      }),
+    );
     app.use((req, res, next) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         next();
