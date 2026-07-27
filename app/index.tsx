@@ -30,6 +30,7 @@ import { speakNarration, stopNarration } from '../src/services/speech';
 import type { ComplexSummary, UserLocation } from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
 import { distanceMeters } from '../src/utils/geo';
+import { buildStyledMapMarkers } from '../src/utils/mapMarkers';
 import {
   buildNearbyNarration,
   buildTop3ChangedScript,
@@ -315,14 +316,7 @@ export default function HomeScreen() {
   const areaFilterLabel =
     areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
 
-  const mapMarkers = useMemo(
-    () =>
-      complexes
-        .filter((c) => c.lat && c.lng)
-        .slice(0, 12)
-        .map((c) => ({ lat: c.lat!, lng: c.lng!, title: c.aptName })),
-    [complexes],
-  );
+  const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 12), [complexes]);
 
   const lat = location?.lat ?? address?.lat ?? 37.5665;
   const lng = location?.lng ?? address?.lng ?? 126.978;

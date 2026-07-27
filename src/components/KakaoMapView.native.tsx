@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { API_BASE_URL } from '../services/api';
-import type { MarkerPoint } from './mapHtml';
+import type { MarkerPoint } from '../utils/mapMarkers';
 
 export type { MarkerPoint };
 
@@ -29,6 +29,9 @@ export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapV
             lat: m.lat,
             lng: m.lng,
             title: m.title ?? '',
+            radius: m.radius,
+            fillColor: m.fillColor,
+            strokeColor: m.strokeColor,
           })),
         ),
       );

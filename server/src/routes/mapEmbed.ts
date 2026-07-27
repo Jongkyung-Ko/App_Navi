@@ -4,6 +4,9 @@ interface MarkerPoint {
   lat: number;
   lng: number;
   title?: string;
+  radius?: number;
+  fillColor?: string;
+  strokeColor?: string;
 }
 
 function escapeJs(value: string): string {
@@ -30,10 +33,28 @@ function buildMapPage(opts: {
     html, body, #map { margin: 0; height: 100%; width: 100%; background: #e8eef4; }
     #fallback { display:none; position:absolute; left:8px; bottom:8px; z-index:999;
       background:rgba(26,35,50,.85); color:#fff; font:12px/1.4 sans-serif; padding:6px 8px; border-radius:6px; }
+    #legend { position:absolute; right:8px; bottom:8px; z-index:999;
+      background:rgba(255,255,255,.92); color:#1a2332; font:11px/1.35 sans-serif;
+      padding:8px 10px; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    #legend .row { display:flex; align-items:center; gap:6px; margin-top:3px; }
+    #legend .dot { width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex:0 0 auto; }
+    .spot {
+      border-radius: 50%;
+      box-sizing: border-box;
+      box-shadow: 0 1px 4px rgba(0,0,0,.28);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="legend">
+    <div style="font-weight:700;margin-bottom:2px">시세 · 거래량</div>
+    <div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>고가</div>
+    <div class="row"><span class="dot" style="background:rgba(234,88,12,.55)"></span>중위</div>
+    <div class="row"><span class="dot" style="background:rgba(234,179,8,.55)"></span>저가</div>
+    <div style="margin-top:4px;color:#5c6670">원 크기 = 거래량</div>
+  </div>
   <div id="fallback"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -42,6 +63,15 @@ function buildMapPage(opts: {
     const markers = ${markerJson};
     const kakaoKey = '${key}';
     let ready = false;
+
+    function spotStyle(m) {
+      return {
+        radius: Number(m.radius) > 0 ? Number(m.radius) : 8,
+        fillColor: m.fillColor || 'rgba(234,88,12,0.55)',
+        strokeColor: m.strokeColor || 'rgba(194,65,12,0.9)',
+        title: m.title || ''
+      };
+    }
 
     function showLeaflet(note) {
       if (ready) return;
@@ -53,9 +83,14 @@ function buildMapPage(opts: {
       }).addTo(map);
       L.marker([lat, lng]).addTo(map).bindPopup('내 위치');
       markers.forEach(function(m) {
+        const s = spotStyle(m);
         L.circleMarker([m.lat, m.lng], {
-          radius: 7, color: '#c45c26', fillColor: '#e07a3d', fillOpacity: 0.9
-        }).addTo(map).bindPopup(m.title || '');
+          radius: s.radius,
+          color: s.strokeColor,
+          weight: 2,
+          fillColor: s.fillColor,
+          fillOpacity: 1
+        }).addTo(map).bindPopup(s.title);
       });
       if (note) {
         const el = document.getElementById('fallback');
@@ -63,6 +98,33 @@ function buildMapPage(opts: {
         el.textContent = note;
       }
       setTimeout(function() { map.invalidateSize(); }, 100);
+    }
+
+    function addKakaoSpot(map, m) {
+      const s = spotStyle(m);
+      const size = Math.max(10, s.radius * 2);
+      const el = document.createElement('div');
+      el.className = 'spot';
+      el.title = s.title;
+      el.style.width = size + 'px';
+      el.style.height = size + 'px';
+      el.style.marginLeft = (-size / 2) + 'px';
+      el.style.marginTop = (-size / 2) + 'px';
+      el.style.background = s.fillColor;
+      el.style.border = '2px solid ' + s.strokeColor;
+      el.addEventListener('click', function() {
+        const iw = new kakao.maps.InfoWindow({ content: '<div style="padding:6px 8px;font:12px sans-serif;">' + (s.title || '') + '</div>' });
+        iw.open(map, new kakao.maps.LatLng(m.lat, m.lng));
+        setTimeout(function() { iw.close(); }, 2800);
+      });
+      new kakao.maps.CustomOverlay({
+        map: map,
+        position: new kakao.maps.LatLng(m.lat, m.lng),
+        content: el,
+        xAnchor: 0,
+        yAnchor: 0,
+        zIndex: 3
+      });
     }
 
     function showKakao() {
@@ -79,13 +141,7 @@ function buildMapPage(opts: {
           const center = new kakao.maps.LatLng(lat, lng);
           const map = new kakao.maps.Map(document.getElementById('map'), { center: center, level: 4 });
           new kakao.maps.Marker({ map: map, position: center, title: '내 위치' });
-          markers.forEach(function(m) {
-            new kakao.maps.Marker({
-              map: map,
-              position: new kakao.maps.LatLng(m.lat, m.lng),
-              title: m.title || ''
-            });
-          });
+          markers.forEach(function(m) { addKakaoSpot(map, m); });
         });
       };
       script.onerror = function() {
