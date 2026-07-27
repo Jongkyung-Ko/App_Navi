@@ -15,6 +15,7 @@ import { LoadingBlock } from '../src/components/LoadingBlock';
 import { fetchNearbyComplexes } from '../src/services/api';
 import type { ComplexSummary } from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
+import { sortBySalePriceDesc } from '../src/utils/mapMarkers';
 
 export default function ComplexesScreen() {
   const router = useRouter();
@@ -60,7 +61,7 @@ export default function ComplexesScreen() {
         lat: params.lat ? Number(params.lat) : undefined,
         lng: params.lng ? Number(params.lng) : undefined,
       });
-      setItems(res.complexes);
+      setItems(sortBySalePriceDesc(res.complexes));
       if (res.areaBands?.length) {
         setAvailableAreaTargets(res.areaBands.map((b) => b.targetM2));
       }

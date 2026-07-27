@@ -11,6 +11,7 @@ export interface MarkerPoint {
   strokeColor: string;
   priceLabel?: string;
   tradeCount?: number;
+  tier?: 'high' | 'mid' | 'low';
 }
 
 const TIER = {
@@ -21,8 +22,9 @@ const TIER = {
 
 const RADIUS_MIN = 7;
 const RADIUS_MAX = 20;
+const TOP_N = 10;
 
-function priceTier(sortedAsc: number[]): { lowMax: number; midMax: number } {
+function priceTertileThresholds(sortedAsc: number[]): { lowMax: number; midMax: number } {
   const n = sortedAsc.length;
   if (n === 0) return { lowMax: 0, midMax: 0 };
   if (n === 1) return { lowMax: sortedAsc[0], midMax: sortedAsc[0] };
@@ -31,10 +33,10 @@ function priceTier(sortedAsc: number[]): { lowMax: number; midMax: number } {
   return { lowMax: sortedAsc[lowIdx], midMax: sortedAsc[midIdx] };
 }
 
-function tierForPrice(price: number, lowMax: number, midMax: number) {
-  if (price > midMax) return TIER.high;
-  if (price > lowMax) return TIER.mid;
-  return TIER.low;
+function tierAmongTop10(price: number, lowMax: number, midMax: number): keyof typeof TIER {
+  if (price > midMax) return 'high';
+  if (price > lowMax) return 'mid';
+  return 'low';
 }
 
 function radiusForCount(count: number, minC: number, maxC: number): number {
@@ -43,10 +45,15 @@ function radiusForCount(count: number, minC: number, maxC: number): number {
   return Math.round(RADIUS_MIN + t * (RADIUS_MAX - RADIUS_MIN));
 }
 
-/** Style nearby complexes: red/orange/yellow by price tertile, size by trade volume. */
+/**
+ * Style map spots:
+ * - Rank by sale price, take Top 10 → split into high/mid/low (red/orange/yellow)
+ * - Everything outside Top 10 → low (yellow)
+ * - Circle size scales with trade volume among visible markers
+ */
 export function buildStyledMapMarkers(
   complexes: ComplexSummary[],
-  limit = 12,
+  limit = 20,
 ): MarkerPoint[] {
   const withCoords = complexes
     .filter((c) => c.lat != null && c.lng != null && Number.isFinite(c.medianPrice))
@@ -54,14 +61,21 @@ export function buildStyledMapMarkers(
 
   if (withCoords.length === 0) return [];
 
-  const prices = withCoords.map((c) => c.medianPrice).sort((a, b) => a - b);
-  const { lowMax, midMax } = priceTier(prices);
+  const byPriceDesc = [...withCoords].sort((a, b) => b.medianPrice - a.medianPrice);
+  const top10 = byPriceDesc.slice(0, TOP_N);
+  const top10Ids = new Set(top10.map((c) => c.id));
+  const top10PricesAsc = top10.map((c) => c.medianPrice).sort((a, b) => a - b);
+  const { lowMax, midMax } = priceTertileThresholds(top10PricesAsc);
+
   const counts = withCoords.map((c) => c.tradeCount || 0);
   const minC = Math.min(...counts);
   const maxC = Math.max(...counts);
 
   return withCoords.map((c) => {
-    const colors = tierForPrice(c.medianPrice, lowMax, midMax);
+    const tierName = top10Ids.has(c.id)
+      ? tierAmongTop10(c.medianPrice, lowMax, midMax)
+      : 'low';
+    const colors = TIER[tierName];
     const tradeCount = c.tradeCount || 0;
     const priceLabel = formatManwon(c.medianPrice);
     return {
@@ -70,9 +84,15 @@ export function buildStyledMapMarkers(
       title: `${c.aptName} · ${priceLabel} · 거래 ${tradeCount}건`,
       priceLabel,
       tradeCount,
+      tier: tierName,
       radius: radiusForCount(tradeCount, minC, maxC),
       fillColor: colors.fill,
       strokeColor: colors.stroke,
     };
   });
+}
+
+/** Sort complexes by median sale price, highest first. */
+export function sortBySalePriceDesc(items: ComplexSummary[]): ComplexSummary[] {
+  return [...items].sort((a, b) => (b.medianPrice || 0) - (a.medianPrice || 0));
 }

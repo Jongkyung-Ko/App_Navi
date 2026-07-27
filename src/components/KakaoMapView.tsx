@@ -27,7 +27,7 @@ export function KakaoMapView({ lat, lng, markers = [], height = 320 }: KakaoMapV
       params.set(
         'markers',
         JSON.stringify(
-          markers.slice(0, 12).map((m) => ({
+          markers.slice(0, 20).map((m) => ({
             lat: m.lat,
             lng: m.lng,
             title: m.title ?? '',

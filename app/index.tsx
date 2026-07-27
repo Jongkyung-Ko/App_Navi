@@ -27,10 +27,10 @@ import {
   watchLocationChanges,
 } from '../src/services/location';
 import { speakNarration, stopNarration } from '../src/services/speech';
-import type { ComplexSummary, UserLocation } from '../src/types';
+import type { ComplexSummary, ReverseGeocodeResult, UserLocation } from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
-import { distanceMeters } from '../src/utils/geo';
-import { buildStyledMapMarkers } from '../src/utils/mapMarkers';
+import { distanceMeters, shiftLocation } from '../src/utils/geo';
+import { buildStyledMapMarkers, sortBySalePriceDesc } from '../src/utils/mapMarkers';
 import {
   buildNearbyNarration,
   buildTop3ChangedScript,
@@ -40,6 +40,8 @@ import {
 
 const MOVE_THRESHOLD_M = 100;
 const MOVE_POLL_MS = 30_000;
+/** One arrow tap shifts the map about this many meters east/west. */
+const MAP_PAN_METERS = 500;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -57,6 +59,9 @@ export default function HomeScreen() {
   const [moveWatchOn, setMoveWatchOn] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [moveStatus, setMoveStatus] = useState<string | null>(null);
+  const [mapFocus, setMapFocus] = useState<UserLocation | null>(null);
+  const [mapAddress, setMapAddress] = useState<ReverseGeocodeResult | null>(null);
+  const [panning, setPanning] = useState(false);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
@@ -66,10 +71,17 @@ export default function HomeScreen() {
   const locationRef = useRef(location);
   const addressRef = useRef(address);
   const areaTargetRef = useRef(areaTarget);
+  const mapFocusRef = useRef(mapFocus);
+  const mapAddressRef = useRef(mapAddress);
 
   locationRef.current = location;
   addressRef.current = address;
   areaTargetRef.current = areaTarget;
+  mapFocusRef.current = mapFocus;
+  mapAddressRef.current = mapAddress;
+
+  const activeLoc = mapFocus ?? location;
+  const activeAddress = mapFocus ? mapAddress : address;
 
   useEffect(() => {
     void fetchKakaoJsKey()
@@ -85,9 +97,12 @@ export default function HomeScreen() {
       quiet?: boolean;
       areaTarget?: number;
     }) => {
-      const lawdCd = opts?.lawdCd ?? addressRef.current?.lawdCd;
-      const lat = opts?.lat ?? locationRef.current?.lat;
-      const lng = opts?.lng ?? locationRef.current?.lng;
+      const focus = mapFocusRef.current;
+      const focusAddr = mapAddressRef.current;
+      const lawdCd =
+        opts?.lawdCd ?? (focus ? focusAddr?.lawdCd : undefined) ?? addressRef.current?.lawdCd;
+      const lat = opts?.lat ?? focus?.lat ?? locationRef.current?.lat;
+      const lng = opts?.lng ?? focus?.lng ?? locationRef.current?.lng;
       const selectedArea =
         opts && 'areaTarget' in opts ? opts.areaTarget : areaTargetRef.current;
       if (!lawdCd || lat === undefined || lng === undefined) return;
@@ -103,7 +118,7 @@ export default function HomeScreen() {
           lng,
           areaTarget: selectedArea,
         });
-        setComplexes(res.complexes.slice(0, 20));
+        setComplexes(sortBySalePriceDesc(res.complexes).slice(0, 20));
         if (res.areaBands?.length) {
           setAvailableAreaTargets(res.areaBands.map((b) => b.targetM2));
         }
@@ -117,15 +132,45 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    void loadComplexes();
-  }, [loadComplexes, address?.lawdCd, location?.lat, location?.lng, areaTarget]);
+    if (!activeAddress?.lawdCd || !activeLoc) return;
+    void loadComplexes({
+      lawdCd: activeAddress.lawdCd,
+      lat: activeLoc.lat,
+      lng: activeLoc.lng,
+    });
+  }, [loadComplexes, activeAddress?.lawdCd, activeLoc?.lat, activeLoc?.lng, areaTarget]);
+
+  const goToMyLocation = useCallback(async () => {
+    setMapFocus(null);
+    setMapAddress(null);
+    await refresh();
+  }, [refresh]);
+
+  const panMap = useCallback(
+    async (direction: -1 | 1) => {
+      const base = activeLoc;
+      if (!base || panning) return;
+      setPanning(true);
+      setListError(null);
+      try {
+        const next = shiftLocation(base, direction * MAP_PAN_METERS, 0);
+        const geo = await reverseGeocode(next.lat, next.lng);
+        setMapFocus(next);
+        setMapAddress(geo);
+      } catch (err) {
+        setListError(err instanceof Error ? err.message : '위치를 옮기지 못했습니다.');
+      } finally {
+        setPanning(false);
+      }
+    },
+    [activeLoc, panning],
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refresh();
-    await loadComplexes();
+    await goToMyLocation();
     setRefreshing(false);
-  }, [refresh, loadComplexes]);
+  }, [goToMyLocation]);
 
   const narration = useMemo(
     () =>
@@ -225,6 +270,8 @@ export default function HomeScreen() {
       });
       // Also sync main location UI when we moved meaningfully.
       if (movedM >= MOVE_THRESHOLD_M) {
+        setMapFocus(null);
+        setMapAddress(null);
         await refresh();
       }
     } catch (err) {
@@ -316,10 +363,12 @@ export default function HomeScreen() {
   const areaFilterLabel =
     areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
 
-  const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 12), [complexes]);
+  const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 20), [complexes]);
+  const rankedList = useMemo(() => sortBySalePriceDesc(complexes).slice(0, 8), [complexes]);
 
-  const lat = location?.lat ?? address?.lat ?? 37.5665;
-  const lng = location?.lng ?? address?.lng ?? 126.978;
+  const lat = activeLoc?.lat ?? activeAddress?.lat ?? 37.5665;
+  const lng = activeLoc?.lng ?? activeAddress?.lng ?? 126.978;
+  const usingMapFocus = mapFocus !== null;
 
   const moveHint = moveWatchOn
     ? moveStatus ?? '100m 이동 또는 30초마다 Top 3 변동을 확인합니다'
@@ -331,9 +380,35 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#c45c26" />}
     >
-      <KakaoMapView lat={lat} lng={lng} jsKey={jsKey} markers={mapMarkers} height={340} />
+      <View style={styles.mapShell}>
+        <KakaoMapView lat={lat} lng={lng} jsKey={jsKey} markers={mapMarkers} height={340} />
+        <Pressable
+          accessibilityLabel="서쪽으로 이동"
+          style={[styles.mapArrow, styles.mapArrowLeft, panning && styles.mapArrowDisabled]}
+          disabled={panning || !activeLoc}
+          onPress={() => void panMap(-1)}
+        >
+          <Text style={styles.mapArrowText}>‹</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="동쪽으로 이동"
+          style={[styles.mapArrow, styles.mapArrowRight, panning && styles.mapArrowDisabled]}
+          disabled={panning || !activeLoc}
+          onPress={() => void panMap(1)}
+        >
+          <Text style={styles.mapArrowText}>›</Text>
+        </Pressable>
+        {panning ? (
+          <View style={styles.mapBusy}>
+            <Text style={styles.mapBusyText}>이 위치 시세 조회 중…</Text>
+          </View>
+        ) : null}
+      </View>
 
-      <AddressCard address={address} loading={loading} />
+      <AddressCard address={activeAddress} loading={loading || panning} />
+      {usingMapFocus ? (
+        <Text style={styles.focusHint}>지도 기준 위치 · 화살표로 좌우 이동해 시세를 다시 조사합니다</Text>
+      ) : null}
       <ErrorBanner message={error ?? listError} />
       <ErrorBanner message={pwa.message} tone="info" />
 
@@ -393,25 +468,25 @@ export default function HomeScreen() {
       ) : null}
 
       <View style={styles.actions}>
-        <Pressable style={styles.primaryBtn} onPress={() => void refresh()}>
+        <Pressable style={styles.primaryBtn} onPress={() => void goToMyLocation()}>
           <Text style={styles.primaryBtnText}>내 위치로</Text>
         </Pressable>
         <Pressable
           style={styles.secondaryBtn}
           onPress={() => {
-            if (!address) return;
+            if (!activeAddress) return;
             router.push({
               pathname: '/complexes',
               params: {
-                lawdCd: address.lawdCd,
+                lawdCd: activeAddress.lawdCd,
                 lat: String(lat),
                 lng: String(lng),
-                region: `${address.region1} ${address.region2}`,
+                region: `${activeAddress.region1} ${activeAddress.region2}`,
                 ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             });
           }}
-          disabled={!address}
+          disabled={!activeAddress}
         >
           <Text style={styles.secondaryBtnText}>전체 단지 보기</Text>
         </Pressable>
@@ -420,7 +495,7 @@ export default function HomeScreen() {
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>주변 단지 시세</Text>
         <Text style={styles.sectionSub}>
-          동일 시군구 · 최근 3개월 · {areaFilterLabel}
+          매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
         </Text>
       </View>
 
@@ -428,7 +503,7 @@ export default function HomeScreen() {
         <LoadingBlock label="실거래가를 집계하는 중…" />
       ) : (
         <ComplexList
-          items={complexes.slice(0, 8)}
+          items={rankedList}
           emptyMessage={
             areaTarget !== undefined
               ? `이 지역에 ${areaFilterLabel} 최근 실거래가 없습니다.`
@@ -439,7 +514,7 @@ export default function HomeScreen() {
               pathname: '/complex/[id]',
               params: {
                 id: encodeURIComponent(item.id),
-                lawdCd: address?.lawdCd ?? '',
+                lawdCd: activeAddress?.lawdCd ?? '',
                 aptName: item.aptName,
                 dong: item.dong,
                 ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
@@ -456,6 +531,59 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#f4f1ea',
+  },
+  mapShell: {
+    position: 'relative',
+  },
+  mapArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(26, 35, 50, 0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  mapArrowLeft: {
+    left: 10,
+  },
+  mapArrowRight: {
+    right: 10,
+  },
+  mapArrowDisabled: {
+    opacity: 0.45,
+  },
+  mapArrowText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '700',
+    marginTop: -2,
+  },
+  mapBusy: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 12,
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  mapBusyText: {
+    backgroundColor: 'rgba(26, 35, 50, 0.85)',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  focusHint: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    fontSize: 12,
+    color: '#6b7580',
   },
   narrationCard: {
     marginHorizontal: 16,

@@ -50,9 +50,9 @@ function buildMapPage(opts: {
   <div id="map"></div>
   <div id="legend">
     <div style="font-weight:700;margin-bottom:2px">시세 · 거래량</div>
-    <div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>고가</div>
-    <div class="row"><span class="dot" style="background:rgba(234,88,12,.55)"></span>중위</div>
-    <div class="row"><span class="dot" style="background:rgba(234,179,8,.55)"></span>저가</div>
+    <div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>Top10 고가</div>
+    <div class="row"><span class="dot" style="background:rgba(234,88,12,.55)"></span>Top10 중위</div>
+    <div class="row"><span class="dot" style="background:rgba(234,179,8,.55)"></span>Top10 저가·그 외</div>
     <div style="margin-top:4px;color:#5c6670">원 크기 = 거래량</div>
   </div>
   <div id="fallback"></div>
