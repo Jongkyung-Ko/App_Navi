@@ -102,12 +102,15 @@ export async function fetchComplexDetail(params: {
   areaBands: AreaBand[];
   selectedAreaTarget: number | null;
 }> {
+  const years = params.years ?? 10;
   const search = new URLSearchParams({
     lawdCd: params.lawdCd,
     aptName: params.aptName,
-    years: String(params.years ?? 10),
+    years: String(years),
   });
   if (params.dong) search.set('dong', params.dong);
   if (params.areaTarget !== undefined) search.set('areaTarget', String(params.areaTarget));
-  return request(`/api/trades/complex?${search.toString()}`, { timeoutMs: 120000 });
+  // Short window for progressive 3y; longer for full 10y cold fetch
+  const timeoutMs = years <= 3 ? 60000 : 120000;
+  return request(`/api/trades/complex?${search.toString()}`, { timeoutMs });
 }

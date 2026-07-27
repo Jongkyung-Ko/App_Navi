@@ -23,6 +23,7 @@ COPY --from=build /app/server/node_modules ./node_modules
 COPY --from=build /app/server/src ./src
 COPY --from=build /app/server/tsconfig.json ./tsconfig.json
 COPY --from=build /app/server/public ./public
+RUN mkdir -p /app/server/.cache
 
 EXPOSE 3001
 CMD ["npx", "tsx", "src/index.ts"]

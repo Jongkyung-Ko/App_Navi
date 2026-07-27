@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { fetchSaleAndJeonseForMonths } from '../services/molit.js';
 import { searchPlaceKeyword } from '../services/kakao.js';
+import { scheduleLawdPrewarm } from '../services/prewarm.js';
 import {
   aggregateComplexes,
   extractAreaBands,
@@ -21,6 +22,7 @@ tradesRouter.get('/', async (req, res) => {
     const lat = req.query.lat ? Number(req.query.lat) : undefined;
     const lng = req.query.lng ? Number(req.query.lng) : undefined;
     const includeJeonse = req.query.includeJeonse !== 'false';
+    const prewarm = req.query.prewarm !== 'false';
 
     if (!/^\d{5}$/.test(lawdCd)) {
       res.status(400).json({ error: 'lawdCd must be a 5-digit 시군구 (구·시·군) code' });
@@ -64,6 +66,11 @@ tradesRouter.get('/', async (req, res) => {
       selectedAreaTarget: areaTarget ?? null,
       mock: process.env.MOLIT_SERVICE_KEY?.startsWith('your_') === true,
     });
+
+    // After responding: warm remaining months so 10y complex detail is fast
+    if (prewarm) {
+      scheduleLawdPrewarm(lawdCd, 10);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'trades failed';
     res.status(502).json({ error: message });
@@ -87,7 +94,8 @@ tradesRouter.get('/complex', async (req, res) => {
     }
 
     const monthKeys = recentYearMonths(months);
-    const { sales, jeonse } = await fetchSaleAndJeonseForMonths(lawdCd, monthKeys, 8);
+    // Higher concurrency when cache-warmed; misses still paced reasonably
+    const { sales, jeonse } = await fetchSaleAndJeonseForMonths(lawdCd, monthKeys, 10);
 
     const filteredSales = sales.filter(
       (t) => t.aptName === aptName && (!dong || t.dong === dong),

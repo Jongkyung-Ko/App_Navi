@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -36,8 +36,11 @@ export default function ComplexDetailScreen() {
   const [complex, setComplex] = useState<ComplexSummary | null>(null);
   const [areaBands, setAreaBands] = useState<AreaBand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [extending, setExtending] = useState(false);
+  const [chartYears, setChartYears] = useState(3);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const loadGen = useRef(0);
 
   const load = useCallback(async () => {
     if (!params.lawdCd || !params.aptName) {
@@ -45,21 +48,48 @@ export default function ComplexDetailScreen() {
       setLoading(false);
       return;
     }
+    const gen = ++loadGen.current;
     setLoading(true);
+    setExtending(false);
+    setChartYears(3);
     setError(null);
     try {
-      const res = await fetchComplexDetail({
+      // Progressive: show recent 3y first, then fill out to 10y
+      const quick = await fetchComplexDetail({
         lawdCd: params.lawdCd,
         aptName: params.aptName,
         dong: params.dong,
-        years: 10,
+        years: 3,
         areaTarget,
       });
-      setComplex(res.complex);
-      setAreaBands(res.areaBands ?? []);
+      if (gen !== loadGen.current) return;
+      setComplex(quick.complex);
+      setAreaBands(quick.areaBands ?? []);
+      setLoading(false);
+
+      setExtending(true);
+      try {
+        const full = await fetchComplexDetail({
+          lawdCd: params.lawdCd,
+          aptName: params.aptName,
+          dong: params.dong,
+          years: 10,
+          areaTarget,
+        });
+        if (gen !== loadGen.current) return;
+        setComplex(full.complex);
+        setAreaBands(full.areaBands ?? []);
+        setChartYears(10);
+      } catch (err) {
+        if (gen !== loadGen.current) return;
+        // Keep 3y chart if extension fails
+        setError(err instanceof Error ? err.message : '10년 시세 조회 실패');
+      } finally {
+        if (gen === loadGen.current) setExtending(false);
+      }
     } catch (err) {
+      if (gen !== loadGen.current) return;
       setError(err instanceof Error ? err.message : '상세 조회 실패');
-    } finally {
       setLoading(false);
     }
   }, [params.lawdCd, params.aptName, params.dong, areaTarget]);
@@ -75,7 +105,7 @@ export default function ComplexDetailScreen() {
   };
 
   if (loading && !complex) {
-    return <LoadingBlock label="최근 10년 매매·전세 시세를 집계하는 중…" />;
+    return <LoadingBlock label="최근 시세를 집계하는 중…" />;
   }
 
   const selectedLabel =
@@ -172,11 +202,13 @@ export default function ComplexDetailScreen() {
             </View>
           </View>
 
-          <Text style={styles.section}>최근 10년 시세</Text>
+          <Text style={styles.section}>최근 {chartYears}년 시세</Text>
           <Text style={styles.sectionHint}>
             {selectedLabel} · 매매/전세/갭 선택 · 길게 누르면 연도별 가격 표시
+            {extending ? ' · 10년 데이터 불러오는 중…' : ''}
           </Text>
           {loading ? <LoadingBlock label="면적별 시세 다시 집계 중…" /> : null}
+          {extending ? <LoadingBlock label="과거 10년 매매·전세 시세를 이어서 집계 중…" /> : null}
           <PriceHistoryChart yearly={complex.yearly ?? []} summary={chartSummary} />
 
           <Text style={styles.section}>최근 매매</Text>

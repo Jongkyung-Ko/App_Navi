@@ -7,6 +7,7 @@ import cors from 'cors';
 import { geocodeRouter } from './routes/geocode.js';
 import { tradesRouter } from './routes/trades.js';
 import { mapEmbedHandler } from './routes/mapEmbed.js';
+import { getDiskCacheRoot } from './services/diskCache.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +31,7 @@ export function createApp() {
       molitReady,
       mockFallback: process.env.ALLOW_MOCK_FALLBACK !== 'false',
       cacheTtlSeconds: Number(process.env.CACHE_TTL_SECONDS ?? 21600),
+      diskCacheDir: getDiskCacheRoot(),
     });
   });
 

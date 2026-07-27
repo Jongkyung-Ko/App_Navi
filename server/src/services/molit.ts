@@ -2,6 +2,26 @@ import { XMLParser } from 'fast-xml-parser';
 import type { ApartmentTrade } from '../types.js';
 import { mapPool } from '../types.js';
 import { cacheGet, cacheSet } from './cache.js';
+import { diskCacheGet, diskCacheSet, molitMonthTtlSeconds } from './diskCache.js';
+
+function readCachedMonth(cacheKey: string): ApartmentTrade[] | undefined {
+  const mem = cacheGet<ApartmentTrade[]>(cacheKey);
+  if (mem) return mem;
+  const disk = diskCacheGet<ApartmentTrade[]>(cacheKey);
+  if (disk) {
+    // Rehydrate memory for the remaining disk TTL window (cap at default mem TTL)
+    const memTtl = Number(process.env.CACHE_TTL_SECONDS ?? 21600);
+    cacheSet(cacheKey, disk, memTtl);
+    return disk;
+  }
+  return undefined;
+}
+
+function writeCachedMonth(cacheKey: string, dealYmd: string, data: ApartmentTrade[]): void {
+  const ttl = molitMonthTtlSeconds(dealYmd);
+  cacheSet(cacheKey, data, ttl);
+  diskCacheSet(cacheKey, data, ttl);
+}
 
 const MOLIT_TRADE_URL =
   'https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade';
@@ -187,7 +207,7 @@ async function fetchMolitItems(
 
 export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Promise<ApartmentTrade[]> {
   const cacheKey = `molit:sale:${lawdCd}:${dealYmd}`;
-  const cached = cacheGet<ApartmentTrade[]>(cacheKey);
+  const cached = readCachedMonth(cacheKey);
   if (cached) return cached;
 
   const allowMock = process.env.ALLOW_MOCK_FALLBACK !== 'false';
@@ -196,7 +216,7 @@ export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Prom
   if (!serviceKey || serviceKey.startsWith('your_')) {
     if (!allowMock) throw new Error('MOLIT_SERVICE_KEY is not configured');
     const mock = mockSales(lawdCd, dealYmd);
-    cacheSet(cacheKey, mock, 300);
+    writeCachedMonth(cacheKey, dealYmd, mock);
     return mock;
   }
 
@@ -205,12 +225,12 @@ export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Prom
     const trades = items
       .map((item) => normalizeSaleItem(item, lawdCd, dealYmd))
       .filter((t): t is ApartmentTrade => t !== null);
-    cacheSet(cacheKey, trades);
+    writeCachedMonth(cacheKey, dealYmd, trades);
     return trades;
   } catch (err) {
     if (allowMock) {
       const mock = mockSales(lawdCd, dealYmd);
-      cacheSet(cacheKey, mock, 300);
+      writeCachedMonth(cacheKey, dealYmd, mock);
       return mock;
     }
     throw err;
@@ -219,7 +239,7 @@ export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Prom
 
 export async function fetchJeonseForMonth(lawdCd: string, dealYmd: string): Promise<ApartmentTrade[]> {
   const cacheKey = `molit:jeonse:${lawdCd}:${dealYmd}`;
-  const cached = cacheGet<ApartmentTrade[]>(cacheKey);
+  const cached = readCachedMonth(cacheKey);
   if (cached) return cached;
 
   const allowMock = process.env.ALLOW_MOCK_FALLBACK !== 'false';
@@ -228,7 +248,7 @@ export async function fetchJeonseForMonth(lawdCd: string, dealYmd: string): Prom
   if (!serviceKey || serviceKey.startsWith('your_')) {
     if (!allowMock) throw new Error('MOLIT_SERVICE_KEY is not configured');
     const mock = mockJeonse(lawdCd, dealYmd);
-    cacheSet(cacheKey, mock, 300);
+    writeCachedMonth(cacheKey, dealYmd, mock);
     return mock;
   }
 
@@ -237,12 +257,12 @@ export async function fetchJeonseForMonth(lawdCd: string, dealYmd: string): Prom
     const rents = items
       .map((item) => normalizeJeonseItem(item, lawdCd, dealYmd))
       .filter((t): t is ApartmentTrade => t !== null);
-    cacheSet(cacheKey, rents);
+    writeCachedMonth(cacheKey, dealYmd, rents);
     return rents;
   } catch (err) {
     if (allowMock) {
       const mock = mockJeonse(lawdCd, dealYmd);
-      cacheSet(cacheKey, mock, 300);
+      writeCachedMonth(cacheKey, dealYmd, mock);
       return mock;
     }
     throw err;

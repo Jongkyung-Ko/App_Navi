@@ -48,3 +48,7 @@ server/.env
 # tests / coverage
 coverage/
 server/coverage/
+
+# MOLIT monthly disk cache
+server/.cache/
+.cache/
