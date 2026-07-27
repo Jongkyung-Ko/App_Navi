@@ -9,6 +9,28 @@ export function formatManwon(price: number): string {
   return `${Math.round(price).toLocaleString('ko-KR')}만`;
 }
 
+/** Compact 억 display: round to 백만원 → "3.3억" / "1억" / "8천만" */
+export function formatManwonCompact(price: number): string {
+  if (!Number.isFinite(price)) return '—';
+  const sign = price < 0 ? '-' : '';
+  const abs = Math.abs(price);
+  if (abs <= 0) return '—';
+
+  const millionWon = Math.round(abs / 100); // 백만원
+  if (millionWon <= 0) return '—';
+
+  const eok = millionWon / 100;
+  if (eok >= 1) {
+    const oneDecimal = Math.round(eok * 10) / 10;
+    const text = oneDecimal.toFixed(1).replace(/\.0$/, '');
+    return `${sign}${text}억`;
+  }
+  if (millionWon >= 10) {
+    return `${sign}${Math.round(millionWon / 10)}천만`;
+  }
+  return `${sign}${millionWon * 100}만`;
+}
+
 export function formatPyeongPrice(pricePerPyeong: number): string {
   return `${Math.round(pricePerPyeong).toLocaleString('ko-KR')}만/평`;
 }

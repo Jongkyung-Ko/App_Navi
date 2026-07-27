@@ -9,7 +9,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import type { ChartTradeDot, QuarterlyPricePoint } from '../types';
-import { formatManwon } from '../utils/format';
+import { formatManwonCompact } from '../utils/format';
 
 interface PriceHistoryChartProps {
   quarterly: QuarterlyPricePoint[];
@@ -289,9 +289,9 @@ export function PriceHistoryChart({
                         <View style={[styles.scrubDot, { backgroundColor: s.color }]} />
                         <Text style={[styles.scrubLabel, { color: s.color }]}>{s.label}</Text>
                         <Text style={styles.scrubValue}>
-                          {median !== null ? formatManwon(median) : '—'}
+                          {median !== null ? formatManwonCompact(median) : '—'}
                           {min !== null && maxV !== null
-                            ? ` (${formatManwon(min)}~${formatManwon(maxV)})`
+                            ? ` (${formatManwonCompact(min)}~${formatManwonCompact(maxV)})`
                             : ''}
                         </Text>
                       </View>
