@@ -8,6 +8,16 @@ interface PriceHistoryChartProps {
   summary?: string;
 }
 
+const CHART_H = 150;
+const COL_W = 56;
+const DOT = 8;
+
+const SERIES = [
+  { key: 'saleMedian' as const, color: '#c45c26', label: '매매' },
+  { key: 'jeonseMedian' as const, color: '#2f6fed', label: '전세' },
+  { key: 'gap' as const, color: '#1f6f4a', label: '매매-전세' },
+];
+
 export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
   const max = useMemo(() => {
     const vals = yearly.flatMap((y) =>
@@ -15,6 +25,8 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
     );
     return Math.max(1, ...vals);
   }, [yearly]);
+
+  const chartWidth = Math.max(yearly.length * COL_W, COL_W);
 
   if (yearly.length === 0) {
     return (
@@ -29,69 +41,141 @@ export function PriceHistoryChart({ yearly, summary }: PriceHistoryChartProps) {
       {summary ? <Text style={styles.summary}>{summary}</Text> : null}
 
       <View style={styles.legend}>
-        <LegendDot color="#c45c26" label="매매" />
-        <LegendDot color="#2f6fed" label="전세" />
-        <LegendDot color="#1f6f4a" label="매매-전세" />
+        {SERIES.map((s) => (
+          <LegendItem key={s.key} color={s.color} label={s.label} />
+        ))}
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartRow}>
-        {yearly.map((y) => (
-          <View key={y.year} style={styles.col}>
-            <View style={styles.bars}>
-              <Bar color="#c45c26" value={y.saleMedian} max={max} />
-              <Bar color="#2f6fed" value={y.jeonseMedian} max={max} />
-              <Bar color="#1f6f4a" value={y.gap} max={max} />
-            </View>
-            <Text style={styles.year}>{String(y.year).slice(2)}</Text>
-            <Text style={styles.tip}>
-              {y.saleMedian !== null ? formatManwon(y.saleMedian) : '-'}
-            </Text>
-            <Text style={[styles.tip, styles.tipJeonse]}>
-              {y.jeonseMedian !== null ? formatManwon(y.jeonseMedian) : '-'}
-            </Text>
-            <Text style={[styles.tip, styles.tipGap]}>
-              {y.gap !== null ? formatManwon(y.gap) : '-'}
-            </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ width: chartWidth }}>
+          <View style={[styles.plot, { height: CHART_H, width: chartWidth }]}>
+            {SERIES.map((series) => (
+              <LineSeries
+                key={series.key}
+                color={series.color}
+                values={yearly.map((y) => y[series.key])}
+                max={max}
+              />
+            ))}
           </View>
-        ))}
+
+          <View style={styles.axisRow}>
+            {yearly.map((y) => (
+              <View key={y.year} style={styles.axisCol}>
+                <Text style={styles.year}>{String(y.year).slice(2)}</Text>
+                <Text style={styles.tip}>{y.saleMedian !== null ? formatManwon(y.saleMedian) : '-'}</Text>
+                <Text style={[styles.tip, styles.tipJeonse]}>
+                  {y.jeonseMedian !== null ? formatManwon(y.jeonseMedian) : '-'}
+                </Text>
+                <Text style={[styles.tip, styles.tipGap]}>
+                  {y.gap !== null ? formatManwon(y.gap) : '-'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+function LegendItem({ color, label }: { color: string; label: string }) {
   return (
     <View style={styles.legendItem}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
+      <View style={[styles.legendLine, { backgroundColor: color }]} />
+      <View style={[styles.legendDot, { backgroundColor: color, borderColor: color }]} />
       <Text style={styles.legendText}>{label}</Text>
     </View>
   );
 }
 
-function Bar({
+function LineSeries({
   color,
-  value,
+  values,
   max,
 }: {
   color: string;
-  value: number | null;
+  values: Array<number | null>;
   max: number;
 }) {
-  const h = value && value > 0 ? Math.max(6, Math.round((value / max) * 110)) : 4;
+  const points = values.map((value, index) => {
+    if (value === null || value <= 0) return null;
+    const x = index * COL_W + COL_W / 2;
+    const y = valueToY(value, max);
+    return { x, y, value };
+  });
+
+  const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a && b) segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+  }
+
   return (
-    <View style={styles.barTrack}>
-      <View
-        style={[
-          styles.bar,
-          {
-            height: h,
-            backgroundColor: color,
-            opacity: value && value > 0 ? 1 : 0.2,
-          },
-        ]}
-      />
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {segments.map((seg, idx) => (
+        <LineSegment key={`seg-${idx}`} {...seg} color={color} />
+      ))}
+      {points.map((p, idx) =>
+        p ? (
+          <View
+            key={`dot-${idx}`}
+            style={[
+              styles.point,
+              {
+                left: p.x - DOT / 2,
+                top: p.y - DOT / 2,
+                backgroundColor: '#fff',
+                borderColor: color,
+              },
+            ]}
+          />
+        ) : null,
+      )}
     </View>
   );
+}
+
+function LineSegment({
+  x1,
+  y1,
+  x2,
+  y2,
+  color,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+}) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: midX - length / 2,
+        top: midY - 1.25,
+        width: length,
+        height: 2.5,
+        backgroundColor: color,
+        borderRadius: 2,
+        transform: [{ rotate: `${angle}deg` }],
+      }}
+    />
+  );
+}
+
+function valueToY(value: number, max: number): number {
+  const usable = CHART_H - 20;
+  return CHART_H - 10 - (value / max) * usable;
 }
 
 const styles = StyleSheet.create({
@@ -111,52 +195,54 @@ const styles = StyleSheet.create({
   },
   legend: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 12,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
-  dot: {
-    width: 8,
-    height: 8,
+  legendLine: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+  },
+  legendDot: {
+    width: 7,
+    height: 7,
     borderRadius: 4,
+    borderWidth: 2,
+    marginRight: 2,
   },
   legendText: {
     fontSize: 12,
     color: '#5c6670',
     fontWeight: '600',
   },
-  chartRow: {
-    alignItems: 'flex-end',
-    gap: 10,
-    paddingRight: 8,
-    minHeight: 200,
+  plot: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#d7dee7',
+    backgroundColor: '#fbfcfe',
+    overflow: 'hidden',
   },
-  col: {
-    width: 52,
+  point: {
+    position: 'absolute',
+    width: DOT,
+    height: DOT,
+    borderRadius: DOT / 2,
+    borderWidth: 2.5,
+  },
+  axisRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  axisCol: {
+    width: COL_W,
     alignItems: 'center',
   },
-  bars: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 3,
-    height: 120,
-  },
-  barTrack: {
-    width: 12,
-    height: 120,
-    justifyContent: 'flex-end',
-  },
-  bar: {
-    width: '100%',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
   year: {
-    marginTop: 6,
     fontSize: 12,
     fontWeight: '800',
     color: '#1a2332',
