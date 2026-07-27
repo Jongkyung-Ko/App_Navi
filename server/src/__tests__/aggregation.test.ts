@@ -136,9 +136,36 @@ describe('buildYearlyComparison', () => {
     const yearly = buildYearlyComparison(sales, rents, 3, new Date(2025, 6, 1));
     expect(yearly.map((y) => y.year)).toEqual([2023, 2024, 2025]);
     expect(yearly[1].saleMedian).toBe(10000);
+    expect(yearly[1].saleMin).toBe(10000);
+    expect(yearly[1].saleMax).toBe(10000);
     expect(yearly[1].jeonseMedian).toBe(6000);
+    expect(yearly[1].jeonseMin).toBe(6000);
+    expect(yearly[1].jeonseMax).toBe(6000);
     expect(yearly[1].gap).toBe(4000);
+    expect(yearly[1].gapMin).toBe(4000);
+    expect(yearly[1].gapMax).toBe(4000);
     expect(yearly[0].saleMedian).toBeNull();
+    expect(yearly[0].saleMin).toBeNull();
+  });
+
+  it('tracks yearly min and max for sale and jeonse', () => {
+    const sales = [
+      trade({ aptName: 'A', price: 8000, exclusiveArea: 84, dealYear: 2024 }),
+      trade({ aptName: 'A', price: 12000, exclusiveArea: 84, dealYear: 2024 }),
+    ];
+    const rents = [
+      trade({ aptName: 'A', price: 5000, exclusiveArea: 84, dealYear: 2024, kind: 'jeonse' }),
+      trade({ aptName: 'A', price: 7000, exclusiveArea: 84, dealYear: 2024, kind: 'jeonse' }),
+    ];
+    const yearly = buildYearlyComparison(sales, rents, 1, new Date(2024, 6, 1));
+    expect(yearly).toHaveLength(1);
+    expect(yearly[0].saleMin).toBe(8000);
+    expect(yearly[0].saleMax).toBe(12000);
+    expect(yearly[0].saleMedian).toBe(10000);
+    expect(yearly[0].jeonseMin).toBe(5000);
+    expect(yearly[0].jeonseMax).toBe(7000);
+    expect(yearly[0].gapMin).toBe(1000); // 8000 - 7000
+    expect(yearly[0].gapMax).toBe(7000); // 12000 - 5000
   });
 });
 

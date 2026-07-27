@@ -26,8 +26,14 @@ export interface MonthlyTrend {
 export interface YearlyPricePoint {
   year: number;
   saleMedian: number | null;
+  saleMin: number | null;
+  saleMax: number | null;
   jeonseMedian: number | null;
+  jeonseMin: number | null;
+  jeonseMax: number | null;
   gap: number | null;
+  gapMin: number | null;
+  gapMax: number | null;
   saleCount: number;
   jeonseCount: number;
 }

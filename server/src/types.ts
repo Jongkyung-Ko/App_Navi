@@ -54,8 +54,14 @@ export interface MonthlyTrend {
 export interface YearlyPricePoint {
   year: number;
   saleMedian: number | null;
+  saleMin: number | null;
+  saleMax: number | null;
   jeonseMedian: number | null;
+  jeonseMin: number | null;
+  jeonseMax: number | null;
   gap: number | null;
+  gapMin: number | null;
+  gapMax: number | null;
   saleCount: number;
   jeonseCount: number;
 }
@@ -217,14 +223,29 @@ export function buildYearlyComparison(
     const sales = saleTrades.filter((t) => t.dealYear === year).map((t) => t.price);
     const rents = jeonseTrades.filter((t) => t.dealYear === year).map((t) => t.price);
     const saleMedian = sales.length ? median(sales) : null;
+    const saleMin = sales.length ? Math.min(...sales) : null;
+    const saleMax = sales.length ? Math.max(...sales) : null;
     const jeonseMedian = rents.length ? median(rents) : null;
+    const jeonseMin = rents.length ? Math.min(...rents) : null;
+    const jeonseMax = rents.length ? Math.max(...rents) : null;
     const gap =
       saleMedian !== null && jeonseMedian !== null ? saleMedian - jeonseMedian : null;
+    // Gap band: narrowest vs widest sale-jeonse spread that year
+    const gapMin =
+      saleMin !== null && jeonseMax !== null ? saleMin - jeonseMax : null;
+    const gapMax =
+      saleMax !== null && jeonseMin !== null ? saleMax - jeonseMin : null;
     points.push({
       year,
       saleMedian,
+      saleMin,
+      saleMax,
       jeonseMedian,
+      jeonseMin,
+      jeonseMax,
       gap,
+      gapMin,
+      gapMax,
       saleCount: sales.length,
       jeonseCount: rents.length,
     });
