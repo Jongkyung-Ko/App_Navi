@@ -36,6 +36,7 @@ import { buildStyledMapMarkers, sortBySalePriceDesc } from '../src/utils/mapMark
 import {
   buildNearbyNarration,
   buildTop3ChangedScript,
+  buildTop3InvestigateScript,
   formatManwonSpoken,
   top3Fingerprint,
 } from '../src/utils/narration';
@@ -303,14 +304,7 @@ export default function HomeScreen() {
       speakScript(stats.script);
       return;
     }
-    speakScript(
-      `선택한 위치를 기준으로 매매가 Top 3입니다. ${stats.top3
-        .map(
-          (c, i) =>
-            `${i + 1}위, ${c.dong} ${c.aptName}, 매매 중간가 ${formatManwonSpoken(c.medianPrice)}.`,
-        )
-        .join(' ')}`,
-    );
+    speakScript(buildTop3InvestigateScript(stats));
   }, [complexes, listLoading, investigating, areaTarget, speakScript]);
 
   const runMoveCheck = useCallback(async (reason: 'distance' | 'interval' | 'watch') => {
@@ -539,12 +533,16 @@ export default function HomeScreen() {
           {narration.top3.map((c, i) => (
             <Text key={c.id} style={styles.narrationRow}>
               {i + 1}. {c.aptName} · {formatManwonSpoken(c.medianPrice)}
+              {c.changePercent !== null
+                ? ` · ${c.changePercent > 0 ? '+' : ''}${c.changePercent.toFixed(1)}%`
+                : ''}
+              {c.saleJeonseGap !== null ? ` · 갭 ${formatManwonSpoken(c.saleJeonseGap)}` : ''}
             </Text>
           ))}
           <Text style={styles.narrationAvg}>
-            매매 평균 {narration.avgSale !== null ? formatManwonSpoken(narration.avgSale) : '-'}
+            매매 {narration.avgSale !== null ? formatManwonSpoken(narration.avgSale) : '-'}
             {' · '}
-            전세 평균 {narration.avgJeonse !== null ? formatManwonSpoken(narration.avgJeonse) : '-'}
+            전세 {narration.avgJeonse !== null ? formatManwonSpoken(narration.avgJeonse) : '-'}
           </Text>
         </View>
       ) : null}
