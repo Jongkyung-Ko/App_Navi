@@ -34,9 +34,18 @@ export function ComplexList({ items, onPress, emptyMessage }: ComplexListProps) 
           </View>
           <Text style={styles.dong}>{item.dong}</Text>
           <View style={styles.rowBottom}>
-            <Text style={styles.price}>{formatManwon(item.medianPrice)}</Text>
+            <View>
+              <Text style={styles.price}>{formatManwon(item.medianPrice)}</Text>
+              {item.medianJeonse !== null ? (
+                <Text style={styles.jeonse}>
+                  전세 {formatManwon(item.medianJeonse)}
+                  {item.saleJeonseGap !== null ? ` · 차 ${formatManwon(item.saleJeonseGap)}` : ''}
+                </Text>
+              ) : null}
+            </View>
             <Text style={styles.meta}>
-              {formatPyeongPrice(item.avgPricePerPyeong)} · 거래 {item.tradeCount}건
+              {formatPyeongPrice(item.avgPricePerPyeong)} · 매매 {item.tradeCount}건
+              {item.jeonseCount ? ` · 전세 ${item.jeonseCount}건` : ''}
             </Text>
           </View>
         </Pressable>
@@ -90,9 +99,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#c45c26',
   },
-  meta: {
+  jeonse: {
+    marginTop: 3,
     fontSize: 12,
+    color: '#2f6fed',
+    fontWeight: '600',
+  },
+  meta: {
+    fontSize: 11,
     color: '#6b7580',
+    maxWidth: '42%',
+    textAlign: 'right',
   },
   empty: {
     padding: 28,

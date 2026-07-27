@@ -13,16 +13,18 @@ function resolveApiBase(): string {
 
 export const API_BASE_URL = resolveApiBase();
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const timeoutMs = init?.timeoutMs ?? 20000;
+  const { timeoutMs: _ignored, ...fetchInit } = init ?? {};
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
+      ...fetchInit,
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
-        ...(init?.headers ?? {}),
+        ...(fetchInit.headers ?? {}),
       },
     });
     const json = (await res.json()) as T & { error?: string };
@@ -86,15 +88,15 @@ export async function fetchComplexDetail(params: {
   lawdCd: string;
   aptName: string;
   dong?: string;
-  months?: number;
+  years?: number;
   areaTarget?: number;
-}): Promise<{ complex: ComplexSummary; months: string[] }> {
+}): Promise<{ complex: ComplexSummary; months: string[]; years: number }> {
   const search = new URLSearchParams({
     lawdCd: params.lawdCd,
     aptName: params.aptName,
-    months: String(params.months ?? 6),
+    years: String(params.years ?? 10),
   });
   if (params.dong) search.set('dong', params.dong);
   if (params.areaTarget) search.set('areaTarget', String(params.areaTarget));
-  return request(`/api/trades/complex?${search.toString()}`);
+  return request(`/api/trades/complex?${search.toString()}`, { timeoutMs: 120000 });
 }

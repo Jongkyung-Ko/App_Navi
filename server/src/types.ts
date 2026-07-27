@@ -3,7 +3,7 @@ export interface ApartmentTrade {
   dong: string;
   jibun?: string;
   exclusiveArea: number;
-  price: number; // 만원 단위
+  price: number; // 만원 (매매가 또는 전세 보증금)
   floor: number;
   dealYear: number;
   dealMonth: number;
@@ -12,6 +12,9 @@ export interface ApartmentTrade {
   buildYear?: number;
   lawdCd: string;
   dealMonthKey: string; // YYYYMM
+  /** 전월세 API: 월세(만원). 0이면 순수 전세 */
+  monthlyRent?: number;
+  kind?: 'sale' | 'jeonse';
 }
 
 export interface ComplexSummary {
@@ -31,6 +34,14 @@ export interface ComplexSummary {
   recentTrades: ApartmentTrade[];
   trendSummary: string;
   changePercent: number | null;
+  /** 최근 구간 전세 중위 보증금(만원) */
+  medianJeonse: number | null;
+  jeonseCount: number;
+  /** 매매 중위 - 전세 중위 (둘 다 있을 때) */
+  saleJeonseGap: number | null;
+  /** 최근 10년 연도별 매매/전세/차이 */
+  yearly: YearlyPricePoint[];
+  recentJeonseTrades: ApartmentTrade[];
 }
 
 export interface MonthlyTrend {
@@ -38,6 +49,15 @@ export interface MonthlyTrend {
   avgPrice: number;
   medianPrice: number;
   tradeCount: number;
+}
+
+export interface YearlyPricePoint {
+  year: number;
+  saleMedian: number | null;
+  jeonseMedian: number | null;
+  gap: number | null;
+  saleCount: number;
+  jeonseCount: number;
 }
 
 export interface ReverseGeocodeResult {
@@ -108,13 +128,48 @@ export function complexId(aptName: string, dong: string): string {
   return `${dong.trim()}::${aptName.trim()}`;
 }
 
+export function buildYearlyComparison(
+  saleTrades: ApartmentTrade[],
+  jeonseTrades: ApartmentTrade[],
+  yearCount = 10,
+  from = new Date(),
+): YearlyPricePoint[] {
+  const endYear = from.getFullYear();
+  const startYear = endYear - yearCount + 1;
+  const points: YearlyPricePoint[] = [];
+
+  for (let year = startYear; year <= endYear; year++) {
+    const sales = saleTrades.filter((t) => t.dealYear === year).map((t) => t.price);
+    const rents = jeonseTrades.filter((t) => t.dealYear === year).map((t) => t.price);
+    const saleMedian = sales.length ? median(sales) : null;
+    const jeonseMedian = rents.length ? median(rents) : null;
+    const gap =
+      saleMedian !== null && jeonseMedian !== null ? saleMedian - jeonseMedian : null;
+    points.push({
+      year,
+      saleMedian,
+      jeonseMedian,
+      gap,
+      saleCount: sales.length,
+      jeonseCount: rents.length,
+    });
+  }
+  return points;
+}
+
 export function aggregateComplexes(
   trades: ApartmentTrade[],
   areaFilter?: { target: number; tolerance: number },
+  jeonseTrades: ApartmentTrade[] = [],
+  options?: { yearCount?: number },
 ): ComplexSummary[] {
   let filtered = trades;
+  let filteredJeonse = jeonseTrades;
   if (areaFilter) {
     filtered = trades.filter(
+      (t) => Math.abs(t.exclusiveArea - areaFilter.target) <= areaFilter.tolerance,
+    );
+    filteredJeonse = jeonseTrades.filter(
       (t) => Math.abs(t.exclusiveArea - areaFilter.target) <= areaFilter.tolerance,
     );
   }
@@ -127,15 +182,37 @@ export function aggregateComplexes(
     groups.set(id, list);
   }
 
+  const jeonseById = new Map<string, ApartmentTrade[]>();
+  for (const rent of filteredJeonse) {
+    const id = complexId(rent.aptName, rent.dong);
+    const list = jeonseById.get(id) ?? [];
+    list.push(rent);
+    jeonseById.set(id, list);
+  }
+
+  // Include jeonse-only complexes if they appear in rent data
+  for (const id of jeonseById.keys()) {
+    if (!groups.has(id)) {
+      groups.set(id, []);
+    }
+  }
+
+  const yearCount = options?.yearCount ?? 10;
   const summaries: ComplexSummary[] = [];
+
   for (const [id, list] of groups) {
+    const rents = jeonseById.get(id) ?? [];
+    const sample = list[0] ?? rents[0];
+    if (!sample) continue;
+
     const prices = list.map((t) => t.price);
     const pyeongPrices = list.map((t) => pricePerPyeong(t.price, t.exclusiveArea));
-    const areas = list.map((t) => t.exclusiveArea);
-    const latestDealDate = [...list]
-      .map((t) => t.dealDate)
-      .sort()
-      .at(-1)!;
+    const areas = [
+      ...list.map((t) => t.exclusiveArea),
+      ...rents.map((t) => t.exclusiveArea),
+    ].filter((a) => a > 0);
+    const latestDealDate =
+      [...list, ...rents].map((t) => t.dealDate).sort().at(-1) ?? '';
 
     const monthMap = new Map<string, number[]>();
     for (const t of list) {
@@ -154,29 +231,42 @@ export function aggregateComplexes(
       }));
 
     const { text, changePercent: pct } = formatTrendSummary(monthly, list.length);
-    const sample = list[0];
+    const medianPrice = prices.length ? median(prices) : 0;
+    const medianJeonse = rents.length ? median(rents.map((r) => r.price)) : null;
+    const saleJeonseGap =
+      prices.length && medianJeonse !== null ? medianPrice - medianJeonse : null;
+    const yearly = buildYearlyComparison(list, rents, yearCount);
 
     summaries.push({
       id,
       aptName: sample.aptName,
       dong: sample.dong,
       tradeCount: list.length,
-      avgPrice: average(prices),
-      medianPrice: median(prices),
-      avgPricePerPyeong: average(pyeongPrices),
+      avgPrice: prices.length ? average(prices) : 0,
+      medianPrice,
+      avgPricePerPyeong: pyeongPrices.length ? average(pyeongPrices) : 0,
       latestDealDate,
-      minArea: Math.min(...areas),
-      maxArea: Math.max(...areas),
+      minArea: areas.length ? Math.min(...areas) : 0,
+      maxArea: areas.length ? Math.max(...areas) : 0,
       monthly,
       recentTrades: [...list]
         .sort((a, b) => b.dealDate.localeCompare(a.dealDate))
         .slice(0, 20),
       trendSummary: text,
       changePercent: pct,
+      medianJeonse,
+      jeonseCount: rents.length,
+      saleJeonseGap,
+      yearly,
+      recentJeonseTrades: [...rents]
+        .sort((a, b) => b.dealDate.localeCompare(a.dealDate))
+        .slice(0, 20),
     });
   }
 
-  return summaries.sort((a, b) => b.tradeCount - a.tradeCount);
+  return summaries.sort(
+    (a, b) => b.tradeCount + b.jeonseCount - (a.tradeCount + a.jeonseCount),
+  );
 }
 
 export function recentYearMonths(count: number, from = new Date()): string[] {
@@ -189,4 +279,27 @@ export function recentYearMonths(count: number, from = new Date()): string[] {
     d.setMonth(d.getMonth() - 1);
   }
   return result;
+}
+
+export async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, Math.max(1, items.length)) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
 }

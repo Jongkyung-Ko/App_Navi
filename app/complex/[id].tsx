@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { useLocalSearchParams } from 'expo-router';
 import { ErrorBanner } from '../../src/components/ErrorBanner';
 import { LoadingBlock } from '../../src/components/LoadingBlock';
-import { TrendChart } from '../../src/components/TrendChart';
+import { PriceHistoryChart } from '../../src/components/PriceHistoryChart';
 import { fetchComplexDetail } from '../../src/services/api';
 import type { ComplexSummary } from '../../src/types';
 import { changeColor, formatArea, formatManwon, formatPyeongPrice } from '../../src/utils/format';
@@ -34,7 +34,7 @@ export default function ComplexDetailScreen() {
         lawdCd: params.lawdCd,
         aptName: params.aptName,
         dong: params.dong,
-        months: 6,
+        years: 10,
         areaTarget: params.areaTarget ? Number(params.areaTarget) : undefined,
       });
       setComplex(res.complex);
@@ -56,8 +56,24 @@ export default function ComplexDetailScreen() {
   };
 
   if (loading && !complex) {
-    return <LoadingBlock label="단지 동향을 분석하는 중…" />;
+    return <LoadingBlock label="최근 10년 매매·전세 시세를 집계하는 중…" />;
   }
+
+  const chartSummary = complex
+    ? [
+        complex.medianPrice
+          ? `최근 매매 중위 ${formatManwon(complex.medianPrice)}`
+          : null,
+        complex.medianJeonse !== null
+          ? `전세 중위 ${formatManwon(complex.medianJeonse)}`
+          : null,
+        complex.saleJeonseGap !== null
+          ? `차이 ${formatManwon(complex.saleJeonseGap)}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : undefined;
 
   return (
     <ScrollView
@@ -74,50 +90,95 @@ export default function ComplexDetailScreen() {
 
           <View style={styles.stats}>
             <View style={styles.stat}>
-              <Text style={styles.statLabel}>중위 시세</Text>
-              <Text style={styles.statValue}>{formatManwon(complex.medianPrice)}</Text>
+              <Text style={styles.statLabel}>매매 중위</Text>
+              <Text style={[styles.statValue, { color: '#c45c26' }]}>
+                {complex.medianPrice ? formatManwon(complex.medianPrice) : '—'}
+              </Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statLabel}>평당가</Text>
+              <Text style={styles.statLabel}>전세 중위</Text>
+              <Text style={[styles.statValue, { color: '#2f6fed' }]}>
+                {complex.medianJeonse !== null ? formatManwon(complex.medianJeonse) : '—'}
+              </Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>매매-전세</Text>
+              <Text style={[styles.statValue, { color: '#1f6f4a' }]}>
+                {complex.saleJeonseGap !== null ? formatManwon(complex.saleJeonseGap) : '—'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.stats}>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>평당 매매</Text>
               <Text style={styles.statValue}>{formatPyeongPrice(complex.avgPricePerPyeong)}</Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statLabel}>변동</Text>
+              <Text style={styles.statLabel}>매매 변동</Text>
               <Text style={[styles.statValue, { color: changeColor(complex.changePercent) }]}>
                 {complex.changePercent === null
                   ? '—'
                   : `${complex.changePercent > 0 ? '+' : ''}${complex.changePercent.toFixed(1)}%`}
               </Text>
             </View>
-          </View>
-
-          <Text style={styles.section}>최근 동향</Text>
-          <TrendChart monthly={complex.monthly} summary={complex.trendSummary} />
-
-          <Text style={styles.section}>최근 거래</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHead}>
-              <Text style={[styles.th, styles.colDate]}>일자</Text>
-              <Text style={[styles.th, styles.colArea]}>면적</Text>
-              <Text style={[styles.th, styles.colFloor]}>층</Text>
-              <Text style={[styles.th, styles.colPrice]}>가격</Text>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>전세 건수</Text>
+              <Text style={styles.statValue}>{complex.jeonseCount}건</Text>
             </View>
-            {complex.recentTrades.length === 0 ? (
-              <Text style={styles.empty}>거래 내역이 없습니다.</Text>
-            ) : (
-              complex.recentTrades.map((t, idx) => (
-                <View key={`${t.dealDate}-${t.floor}-${idx}`} style={styles.tr}>
-                  <Text style={[styles.td, styles.colDate]}>{t.dealDate.slice(5)}</Text>
-                  <Text style={[styles.td, styles.colArea]}>{formatArea(t.exclusiveArea)}</Text>
-                  <Text style={[styles.td, styles.colFloor]}>{t.floor}</Text>
-                  <Text style={[styles.td, styles.colPrice]}>{formatManwon(t.price)}</Text>
-                </View>
-              ))
-            )}
           </View>
+
+          <Text style={styles.section}>최근 10년 시세</Text>
+          <Text style={styles.sectionHint}>연도별 중위 매매 · 전세 · 매매-전세 차이</Text>
+          <PriceHistoryChart yearly={complex.yearly ?? []} summary={chartSummary} />
+
+          <Text style={styles.section}>최근 매매</Text>
+          <TradeTable
+            rows={complex.recentTrades}
+            empty="매매 내역이 없습니다."
+          />
+
+          <Text style={styles.section}>최근 전세</Text>
+          <TradeTable
+            rows={complex.recentJeonseTrades ?? []}
+            empty="전세 내역이 없습니다."
+            priceLabel="보증금"
+          />
         </>
       ) : null}
     </ScrollView>
+  );
+}
+
+function TradeTable({
+  rows,
+  empty,
+}: {
+  rows: ComplexSummary['recentTrades'];
+  empty: string;
+  priceLabel?: string;
+}) {
+  return (
+    <View style={styles.table}>
+      <View style={styles.tableHead}>
+        <Text style={[styles.th, styles.colDate]}>일자</Text>
+        <Text style={[styles.th, styles.colArea]}>면적</Text>
+        <Text style={[styles.th, styles.colFloor]}>층</Text>
+        <Text style={[styles.th, styles.colPrice]}>가격</Text>
+      </View>
+      {rows.length === 0 ? (
+        <Text style={styles.empty}>{empty}</Text>
+      ) : (
+        rows.map((t, idx) => (
+          <View key={`${t.dealDate}-${t.floor}-${idx}`} style={styles.tr}>
+            <Text style={[styles.td, styles.colDate]}>{t.dealDate.slice(5)}</Text>
+            <Text style={[styles.td, styles.colArea]}>{formatArea(t.exclusiveArea)}</Text>
+            <Text style={[styles.td, styles.colFloor]}>{t.floor}</Text>
+            <Text style={[styles.td, styles.colPrice]}>{formatManwon(t.price)}</Text>
+          </View>
+        ))
+      )}
+    </View>
   );
 }
 
@@ -143,7 +204,7 @@ const styles = StyleSheet.create({
   stats: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 16,
+    marginTop: 12,
   },
   stat: {
     flex: 1,
@@ -159,16 +220,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   statValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#1a2332',
   },
   section: {
     marginTop: 22,
-    marginBottom: 10,
+    marginBottom: 6,
     fontSize: 16,
     fontWeight: '800',
     color: '#1a2332',
+  },
+  sectionHint: {
+    marginBottom: 10,
+    fontSize: 12,
+    color: '#6b7580',
   },
   table: {
     backgroundColor: '#fff',

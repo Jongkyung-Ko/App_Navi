@@ -12,6 +12,8 @@ export interface ApartmentTrade {
   buildYear?: number;
   lawdCd: string;
   dealMonthKey: string;
+  monthlyRent?: number;
+  kind?: 'sale' | 'jeonse';
 }
 
 export interface MonthlyTrend {
@@ -19,6 +21,15 @@ export interface MonthlyTrend {
   avgPrice: number;
   medianPrice: number;
   tradeCount: number;
+}
+
+export interface YearlyPricePoint {
+  year: number;
+  saleMedian: number | null;
+  jeonseMedian: number | null;
+  gap: number | null;
+  saleCount: number;
+  jeonseCount: number;
 }
 
 export interface ComplexSummary {
@@ -38,6 +49,11 @@ export interface ComplexSummary {
   recentTrades: ApartmentTrade[];
   trendSummary: string;
   changePercent: number | null;
+  medianJeonse: number | null;
+  jeonseCount: number;
+  saleJeonseGap: number | null;
+  yearly: YearlyPricePoint[];
+  recentJeonseTrades: ApartmentTrade[];
 }
 
 export interface ReverseGeocodeResult {
@@ -56,6 +72,7 @@ export interface TradesResponse {
   lawdCd: string;
   months: string[];
   tradeCount: number;
+  jeonseCount?: number;
   complexCount: number;
   complexes: ComplexSummary[];
   mock?: boolean;

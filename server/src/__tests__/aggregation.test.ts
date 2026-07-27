@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateComplexes,
   average,
+  buildYearlyComparison,
   changePercent,
   formatTrendSummary,
   median,
@@ -10,7 +11,9 @@ import {
   type ApartmentTrade,
 } from '../types.js';
 
-function trade(partial: Partial<ApartmentTrade> & Pick<ApartmentTrade, 'aptName' | 'price' | 'exclusiveArea'>): ApartmentTrade {
+function trade(
+  partial: Partial<ApartmentTrade> & Pick<ApartmentTrade, 'aptName' | 'price' | 'exclusiveArea'>,
+): ApartmentTrade {
   return {
     dong: '중구 회현동',
     floor: 10,
@@ -20,6 +23,7 @@ function trade(partial: Partial<ApartmentTrade> & Pick<ApartmentTrade, 'aptName'
     dealDate: '2026-05-10',
     lawdCd: '11140',
     dealMonthKey: '202605',
+    kind: 'sale',
     ...partial,
   };
 }
@@ -44,17 +48,51 @@ describe('stats helpers', () => {
 });
 
 describe('aggregateComplexes', () => {
-  it('groups by apt name and dong', () => {
+  it('groups by apt name and dong with jeonse gap', () => {
     const trades = [
-      trade({ aptName: 'A아파트', price: 10000, exclusiveArea: 84, dealDate: '2026-03-01', dealYear: 2026, dealMonth: 3 }),
-      trade({ aptName: 'A아파트', price: 12000, exclusiveArea: 84, dealDate: '2026-04-01', dealYear: 2026, dealMonth: 4 }),
-      trade({ aptName: 'B아파트', price: 20000, exclusiveArea: 59, dealDate: '2026-04-15', dealYear: 2026, dealMonth: 4 }),
+      trade({
+        aptName: 'A아파트',
+        price: 10000,
+        exclusiveArea: 84,
+        dealDate: '2026-03-01',
+        dealYear: 2026,
+        dealMonth: 3,
+      }),
+      trade({
+        aptName: 'A아파트',
+        price: 12000,
+        exclusiveArea: 84,
+        dealDate: '2026-04-01',
+        dealYear: 2026,
+        dealMonth: 4,
+      }),
+      trade({
+        aptName: 'B아파트',
+        price: 20000,
+        exclusiveArea: 59,
+        dealDate: '2026-04-15',
+        dealYear: 2026,
+        dealMonth: 4,
+      }),
     ];
-    const result = aggregateComplexes(trades);
+    const jeonse = [
+      trade({
+        aptName: 'A아파트',
+        price: 7000,
+        exclusiveArea: 84,
+        dealYear: 2026,
+        dealMonth: 4,
+        kind: 'jeonse',
+        monthlyRent: 0,
+      }),
+    ];
+    const result = aggregateComplexes(trades, undefined, jeonse, { yearCount: 1 });
     expect(result).toHaveLength(2);
     const a = result.find((c) => c.aptName === 'A아파트')!;
     expect(a.tradeCount).toBe(2);
     expect(a.medianPrice).toBe(11000);
+    expect(a.medianJeonse).toBe(7000);
+    expect(a.saleJeonseGap).toBe(4000);
     expect(a.monthly).toHaveLength(2);
   });
 
@@ -66,6 +104,25 @@ describe('aggregateComplexes', () => {
     const result = aggregateComplexes(trades, { target: 84, tolerance: 5 });
     expect(result[0].tradeCount).toBe(1);
     expect(result[0].medianPrice).toBe(10000);
+  });
+});
+
+describe('buildYearlyComparison', () => {
+  it('builds sale/jeonse/gap series', () => {
+    const sales = [
+      trade({ aptName: 'A', price: 10000, exclusiveArea: 84, dealYear: 2024 }),
+      trade({ aptName: 'A', price: 12000, exclusiveArea: 84, dealYear: 2025 }),
+    ];
+    const rents = [
+      trade({ aptName: 'A', price: 6000, exclusiveArea: 84, dealYear: 2024, kind: 'jeonse' }),
+      trade({ aptName: 'A', price: 7000, exclusiveArea: 84, dealYear: 2025, kind: 'jeonse' }),
+    ];
+    const yearly = buildYearlyComparison(sales, rents, 3, new Date(2025, 6, 1));
+    expect(yearly.map((y) => y.year)).toEqual([2023, 2024, 2025]);
+    expect(yearly[1].saleMedian).toBe(10000);
+    expect(yearly[1].jeonseMedian).toBe(6000);
+    expect(yearly[1].gap).toBe(4000);
+    expect(yearly[0].saleMedian).toBeNull();
   });
 });
 
@@ -87,7 +144,7 @@ describe('formatTrendSummary', () => {
 
 describe('recentYearMonths', () => {
   it('returns YYYYMM keys going backwards', () => {
-    const months = recentYearMonths(3, new Date(2026, 6, 15)); // Jul 2026
+    const months = recentYearMonths(3, new Date(2026, 6, 15));
     expect(months).toEqual(['202607', '202606', '202605']);
   });
 });
