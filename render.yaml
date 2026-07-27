@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: app-navi
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOW_MOCK_FALLBACK
+        value: "false"
+      - key: CACHE_TTL_SECONDS
+        value: "21600"
+      - key: KAKAO_REST_KEY
+        sync: false
+      - key: KAKAO_JS_KEY
+        sync: false
+      - key: MOLIT_SERVICE_KEY
+        sync: false

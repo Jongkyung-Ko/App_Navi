@@ -3,6 +3,11 @@ import { Platform } from 'react-native';
 import type { ComplexSummary, ReverseGeocodeResult, TradesResponse } from '../types';
 
 function resolveApiBase(): string {
+  // Set at build time for production (empty string = same-origin).
+  if (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_BASE_URL !== undefined) {
+    return String(process.env.EXPO_PUBLIC_API_BASE_URL).replace(/\/$/, '');
+  }
+
   const extra = Constants.expoConfig?.extra as { apiBaseUrl?: string } | undefined;
   if (extra?.apiBaseUrl) return extra.apiBaseUrl.replace(/\/$/, '');
 
