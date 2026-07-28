@@ -94,7 +94,7 @@ export function PriceHistoryChart({
 
   const activeSeries = useMemo(() => SERIES.filter((s) => visible[s.key]), [visible]);
 
-  const max = useMemo(() => {
+  const dataMax = useMemo(() => {
     const fromLines = quarterly.flatMap((y) =>
       activeSeries.flatMap((s) => [y[s.medianKey], y[s.minKey], y[s.maxKey]]),
     );
@@ -106,6 +106,8 @@ export function PriceHistoryChart({
     );
     return Math.max(1, ...positive);
   }, [quarterly, activeSeries, chartDots, visible]);
+
+  const { axisMax, yTicks } = useMemo(() => buildEokAxis(dataMax), [dataMax]);
 
   const chartWidth = Math.max(quarterly.length * COL_W, COL_W);
 
@@ -190,16 +192,6 @@ export function PriceHistoryChart({
     [chartDots, visible],
   );
 
-  const yTicks = useMemo(() => {
-    const top = max;
-    const mid = max / 2;
-    return [
-      { key: 'max', value: top, label: formatManwonCompact(top), y: valueToY(top, max) },
-      { key: 'mid', value: mid, label: formatManwonCompact(mid), y: valueToY(mid, max) },
-      { key: 'min', value: 0, label: '0', y: valueToY(0, max) },
-    ];
-  }, [max]);
-
   if (quarterly.length === 0) {
     return (
       <View style={styles.wrap}>
@@ -264,13 +256,23 @@ export function PriceHistoryChart({
               onResponderRelease={endHold}
               onResponderTerminate={endHold}
             >
+            {/* Y grid lines */}
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              {yTicks.map((tick) => (
+                <View
+                  key={`grid-${tick.key}`}
+                  style={[styles.gridLine, { top: tick.y }]}
+                />
+              ))}
+            </View>
+
             {/* Trade scatter under lines */}
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               {visibleDots.map((d, idx) => {
                 const series = SERIES.find((s) => s.key === d.kind);
                 if (!series) return null;
                 const left = d.x * COL_W - TRADE_DOT / 2;
-                const top = valueToY(d.price, max) - TRADE_DOT / 2;
+                const top = valueToY(d.price, axisMax) - TRADE_DOT / 2;
                 return (
                   <View
                     key={`t-${d.kind}-${idx}`}
@@ -292,21 +294,21 @@ export function PriceHistoryChart({
                 <LineSeries
                   color={series.rangeColor}
                   values={quarterly.map((y) => y[series.maxKey])}
-                  max={max}
+                  max={axisMax}
                   dashed
                   showDots={false}
                 />
                 <LineSeries
                   color={series.rangeColor}
                   values={quarterly.map((y) => y[series.minKey])}
-                  max={max}
+                  max={axisMax}
                   dashed
                   showDots={false}
                 />
                 <LineSeries
                   color={series.color}
                   values={quarterly.map((y) => y[series.medianKey])}
-                  max={max}
+                  max={axisMax}
                 />
               </React.Fragment>
             ))}
@@ -532,6 +534,82 @@ function valueToY(value: number, max: number): number {
   return CHART_H - 10 - (value / max) * usable;
 }
 
+const EOK_MANWON = 10000;
+
+function formatEokTick(eok: number): string {
+  const rounded = Math.round(eok * 10) / 10;
+  if (Math.abs(rounded - Math.round(rounded)) < 1e-9) {
+    return `${Math.round(rounded)}억`;
+  }
+  return `${rounded.toFixed(1)}억`;
+}
+
+/**
+ * Y-axis in 억 units: prefer 1억 steps (1,2,3…), use 0.5억 when zoomed (narrow range).
+ * Keep 2–5 labels and round axis max to the step.
+ */
+function buildEokAxis(dataMaxManwon: number): {
+  axisMax: number;
+  yTicks: Array<{ key: string; value: number; label: string; y: number }>;
+} {
+  const dataEok = Math.max(0.5, dataMaxManwon / EOK_MANWON);
+  // Zoomed-in ranges get half-억 ticks
+  const candidates =
+    dataEok <= 4 ? [0.5, 1, 2, 2.5, 5] : [1, 2, 2.5, 5, 10, 20];
+
+  let step = candidates[candidates.length - 1]!;
+  for (const c of candidates) {
+    const count = Math.ceil(dataEok / c);
+    if (count >= 2 && count <= 5) {
+      step = c;
+      break;
+    }
+  }
+
+  let axisMaxEok = Math.ceil(dataEok / step) * step;
+  if (axisMaxEok < step * 2) axisMaxEok = step * 2;
+
+  // Rebuild if still outside 2–5
+  let ticksEok: number[] = [];
+  const refill = (s: number, top: number) => {
+    const out: number[] = [];
+    for (let v = s; v <= top + 1e-9; v += s) {
+      out.push(Math.round(v * 10) / 10);
+    }
+    return out;
+  };
+  ticksEok = refill(step, axisMaxEok);
+
+  while (ticksEok.length > 5) {
+    const idx = candidates.indexOf(step);
+    const next = candidates[Math.min(candidates.length - 1, idx + 1)] ?? step * 2;
+    if (next === step) break;
+    step = next;
+    axisMaxEok = Math.ceil(dataEok / step) * step;
+    if (axisMaxEok < step * 2) axisMaxEok = step * 2;
+    ticksEok = refill(step, axisMaxEok);
+  }
+  while (ticksEok.length < 2 && step > 0.5) {
+    step = 0.5;
+    axisMaxEok = Math.ceil(dataEok / step) * step;
+    if (axisMaxEok < step * 2) axisMaxEok = step * 2;
+    ticksEok = refill(step, axisMaxEok);
+  }
+
+  const axisMax = axisMaxEok * EOK_MANWON;
+  const yTicks = ticksEok.map((eok) => {
+    const value = eok * EOK_MANWON;
+    return {
+      key: `eok-${eok}`,
+      value,
+      label: formatEokTick(eok),
+      y: valueToY(value, axisMax),
+    };
+  });
+
+  return { axisMax, yTicks };
+}
+
 const styles = StyleSheet.create({
   wrap: {
     backgroundColor: '#fff',
@@ -600,6 +678,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#d7dee7',
     backgroundColor: '#fbfcfe',
     overflow: 'hidden',
+  },
+  gridLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(180, 188, 198, 0.55)',
   },
   point: {
     position: 'absolute',
