@@ -52,3 +52,7 @@ server/coverage/
 # MOLIT monthly disk cache
 server/.cache/
 .cache/
+
+# MOLIT official CSV backfill (large local artifacts)
+data/molit-raw/downloads/
+data/molit-store/

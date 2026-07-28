@@ -1,0 +1,90 @@
+{
+  "createdAt": "2026-07-28T04:23:35.061074Z",
+  "files": 2,
+  "rowsIn": 10,
+  "rowsOut": 7,
+  "safeForMerge": true,
+  "bucketFiles": 0,
+  "reports": [
+    {
+      "file": "data/molit-raw/fixtures/sample_seoul_sale_cp949.csv",
+      "kind": "sale",
+      "headerIndex": 15,
+      "fieldnames": [
+        "NO",
+        "시군구",
+        "번지",
+        "본번",
+        "부번",
+        "단지명",
+        "전용면적(㎡)",
+        "계약년월",
+        "계약일",
+        "거래금액(만원)",
+        "동",
+        "층",
+        "매수자",
+        "매도자",
+        "건축년도",
+        "도로명",
+        "해제사유발생일",
+        "거래유형",
+        "중개사소재지",
+        "등기일자"
+      ],
+      "missingRequired": [],
+      "rowsIn": 5,
+      "rowsOut": 5,
+      "unmappedSigungu": {},
+      "cancelledSkipped": 0,
+      "monthlyRentSkipped": 0,
+      "parseErrors": 0,
+      "byLawdMonthCount": 4,
+      "sampleBuckets": {
+        "11215:202412:sale": 2,
+        "11200:202412:sale": 1,
+        "11110:202412:sale": 1,
+        "11140:202412:sale": 1
+      }
+    },
+    {
+      "file": "data/molit-raw/fixtures/sample_seoul_jeonse_cp949.csv",
+      "kind": "jeonse",
+      "headerIndex": 15,
+      "fieldnames": [
+        "NO",
+        "시군구",
+        "번지",
+        "본번",
+        "부번",
+        "단지명",
+        "전월세구분",
+        "전용면적(㎡)",
+        "계약년월",
+        "계약일",
+        "보증금(만원)",
+        "월세금(만원)",
+        "층",
+        "건축년도",
+        "도로명",
+        "계약기간",
+        "계약구분",
+        "갱신요구권 사용",
+        "종전계약 보증금(만원)",
+        "종전계약 월세(만원)",
+        "주택유형"
+      ],
+      "missingRequired": [],
+      "rowsIn": 5,
+      "rowsOut": 2,
+      "unmappedSigungu": {},
+      "cancelledSkipped": 0,
+      "monthlyRentSkipped": 3,
+      "parseErrors": 0,
+      "byLawdMonthCount": 1,
+      "sampleBuckets": {
+        "11740:202412:jeonse": 2
+      }
+    }
+  ]
+}
