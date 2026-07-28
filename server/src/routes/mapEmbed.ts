@@ -296,6 +296,11 @@ function buildMapPage(opts: {
         );
       } else if (cmd === 'setMarkers' && Array.isArray(data.markers)) {
         mapApi.setMarkers(data.markers);
+      } else if (cmd === 'setRadiusCircle') {
+        const meters = data.radiusM == null ? null : Number(data.radiusM);
+        mapApi.setRadiusCircle(
+          meters != null && Number.isFinite(meters) && meters > 0 ? meters : null
+        );
       }
     }
 
@@ -313,6 +318,8 @@ function buildMapPage(opts: {
       }).addTo(map);
 
       let focusMarker = null;
+      let radiusCircle = null;
+      let radiusMeters = null;
       let userMarker = L.marker([lat, lng], {
         icon: L.divIcon({
           className: 'me-icon',
@@ -332,6 +339,29 @@ function buildMapPage(opts: {
         return root ? root.querySelector('.me-wrap') : null;
       }
 
+      function syncRadiusCircle(plat, plng) {
+        if (radiusMeters == null || !Number.isFinite(plat) || !Number.isFinite(plng)) {
+          if (radiusCircle) {
+            map.removeLayer(radiusCircle);
+            radiusCircle = null;
+          }
+          return;
+        }
+        if (!radiusCircle) {
+          radiusCircle = L.circle([plat, plng], {
+            radius: radiusMeters,
+            color: 'rgba(34, 160, 80, 0.72)',
+            weight: 4,
+            fillColor: 'rgba(34, 160, 80, 0.08)',
+            fillOpacity: 0.08,
+            interactive: false
+          }).addTo(map);
+        } else {
+          radiusCircle.setLatLng([plat, plng]);
+          radiusCircle.setRadius(radiusMeters);
+        }
+      }
+
       function animateUserTo(plat, plng, centerMap, heading) {
         if (animFrame) cancelAnimationFrame(animFrame);
         const cur = userMarker.getLatLng();
@@ -346,6 +376,7 @@ function buildMapPage(opts: {
           const nextLat = lerp(animFrom.lat, animTo.lat, ease);
           const nextLng = lerp(animFrom.lng, animTo.lng, ease);
           userMarker.setLatLng([nextLat, nextLng]);
+          syncRadiusCircle(nextLat, nextLng);
           if (centerMap) {
             withProgrammatic(function() {
               map.panTo([nextLat, nextLng], { animate: false });
@@ -405,6 +436,11 @@ function buildMapPage(opts: {
         setMarkers: function(list) {
           markers = list || [];
           renderSpots(markers);
+        },
+        setRadiusCircle: function(meters) {
+          radiusMeters = meters;
+          const cur = userMarker.getLatLng();
+          syncRadiusCircle(cur.lat, cur.lng);
         }
       };
 
@@ -457,6 +493,8 @@ function buildMapPage(opts: {
           map.addControl(zoomControl, kakao.maps.ControlPosition.TOPRIGHT);
 
           let focusMarker = null;
+          let radiusCircle = null;
+          let radiusMeters = null;
           let spotOverlays = [];
           const meHost = document.createElement('div');
           meHost.innerHTML = meHtml();
@@ -475,6 +513,33 @@ function buildMapPage(opts: {
           let animFrom = { lat: lat, lng: lng };
           let animTo = { lat: lat, lng: lng };
 
+          function syncRadiusCircle(plat, plng) {
+            if (radiusMeters == null || !Number.isFinite(plat) || !Number.isFinite(plng)) {
+              if (radiusCircle) {
+                radiusCircle.setMap(null);
+                radiusCircle = null;
+              }
+              return;
+            }
+            const ll = new kakao.maps.LatLng(plat, plng);
+            if (!radiusCircle) {
+              radiusCircle = new kakao.maps.Circle({
+                center: ll,
+                radius: radiusMeters,
+                strokeWeight: 4,
+                strokeColor: '#22a050',
+                strokeOpacity: 0.72,
+                strokeStyle: 'solid',
+                fillColor: '#22a050',
+                fillOpacity: 0.08
+              });
+              radiusCircle.setMap(map);
+            } else {
+              radiusCircle.setPosition(ll);
+              radiusCircle.setRadius(radiusMeters);
+            }
+          }
+
           function animateUserTo(plat, plng, centerMap, heading) {
             if (animFrame) cancelAnimationFrame(animFrame);
             const cur = userOverlay.getPosition();
@@ -490,6 +555,7 @@ function buildMapPage(opts: {
               const nextLng = lerp(animFrom.lng, animTo.lng, ease);
               const ll = new kakao.maps.LatLng(nextLat, nextLng);
               userOverlay.setPosition(ll);
+              syncRadiusCircle(nextLat, nextLng);
               if (centerMap) {
                 withProgrammatic(function() { map.setCenter(ll); });
               }
@@ -553,6 +619,11 @@ function buildMapPage(opts: {
             setMarkers: function(list) {
               markers = list || [];
               renderSpots(markers);
+            },
+            setRadiusCircle: function(meters) {
+              radiusMeters = meters;
+              const cur = userOverlay.getPosition();
+              syncRadiusCircle(cur.getLat(), cur.getLng());
             }
           };
 
