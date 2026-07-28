@@ -15,7 +15,8 @@ export const tradesRouter = Router();
 
 /** Max complexes to geocode when filtering by radius (Kakao rate / latency). */
 const RADIUS_ENRICH_CAP = 80;
-const DEFAULT_ENRICH_CAP = 15;
+/** Enough points for 평단가 heat overlay (시군구 mode). */
+const DEFAULT_ENRICH_CAP = 40;
 const ENRICH_CONCURRENCY = 5;
 
 tradesRouter.get('/', async (req, res) => {

@@ -129,11 +129,13 @@ function buildMapPage(opts: {
   <div id="map"></div>
   <div id="hint">길게 누르면 이 위치로 시세 조사</div>
   <div id="legend">
-    <div style="font-weight:700;margin-bottom:2px">시세 · 거래량</div>
-    <div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>Top10 고가</div>
-    <div class="row"><span class="dot" style="background:rgba(234,88,12,.55)"></span>Top10 중위</div>
-    <div class="row"><span class="dot" style="background:rgba(234,179,8,.55)"></span>Top10 저가·그 외</div>
-    <div style="margin-top:4px;color:#5c6670">원 크기 = 거래량</div>
+    <div id="legendTitle" style="font-weight:700;margin-bottom:2px">시세 · 거래량</div>
+    <div id="legendBody">
+      <div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>Top10 고가</div>
+      <div class="row"><span class="dot" style="background:rgba(234,88,12,.55)"></span>Top10 중위</div>
+      <div class="row"><span class="dot" style="background:rgba(234,179,8,.55)"></span>Top10 저가·그 외</div>
+      <div style="margin-top:4px;color:#5c6670">원 크기 = 거래량</div>
+    </div>
   </div>
   <div id="fallback"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -274,6 +276,27 @@ function buildMapPage(opts: {
         + '</div>';
     }
 
+    function applyMapLegend(mode) {
+      const title = document.getElementById('legendTitle');
+      const body = document.getElementById('legendBody');
+      if (!title || !body) return;
+      if (mode === 'pyeong') {
+        title.textContent = '평당 매매가';
+        body.innerHTML = ''
+          + '<div style="height:8px;border-radius:999px;margin-top:4px;'
+          + 'background:linear-gradient(90deg,#14b8a6,#eab308,#ea580c,#dc2626)"></div>'
+          + '<div style="display:flex;justify-content:space-between;margin-top:3px;color:#5c6670">'
+          + '<span>낮음</span><span>높음</span></div>';
+      } else {
+        title.textContent = '시세 · 거래량';
+        body.innerHTML = ''
+          + '<div class="row"><span class="dot" style="background:rgba(220,38,38,.55)"></span>Top10 고가</div>'
+          + '<div class="row"><span class="dot" style="background:rgba(234,88,12,.55)"></span>Top10 중위</div>'
+          + '<div class="row"><span class="dot" style="background:rgba(234,179,8,.55)"></span>Top10 저가·그 외</div>'
+          + '<div style="margin-top:4px;color:#5c6670">원 크기 = 거래량</div>';
+      }
+    }
+
     function onHostMessage(event) {
       const data = event && event.data;
       if (!data || typeof data !== 'object') return;
@@ -296,6 +319,10 @@ function buildMapPage(opts: {
         );
       } else if (cmd === 'setMarkers' && Array.isArray(data.markers)) {
         mapApi.setMarkers(data.markers);
+      } else if (cmd === 'setHeatLayer') {
+        mapApi.setHeatLayer(Array.isArray(data.points) ? data.points : []);
+      } else if (cmd === 'setMapLegend') {
+        applyMapLegend(data.mode === 'pyeong' ? 'pyeong' : 'sale');
       } else if (cmd === 'setRadiusCircle') {
         const meters = data.radiusM == null ? null : Number(data.radiusM);
         const clat = data.lat == null ? null : Number(data.lat);
@@ -399,7 +426,27 @@ function buildMapPage(opts: {
         animFrame = requestAnimationFrame(step);
       }
 
+      const heatLayer = L.layerGroup().addTo(map);
       const spotLayer = L.layerGroup().addTo(map);
+
+      function renderHeat(list) {
+        heatLayer.clearLayers();
+        (list || []).forEach(function(h) {
+          if (!Number.isFinite(h.lat) || !Number.isFinite(h.lng)) return;
+          const intensity = Number(h.intensity);
+          const t = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0.5;
+          const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 180;
+          const color = h.fillColor || '#ea580c';
+          L.circle([h.lat, h.lng], {
+            radius: radius,
+            color: color,
+            weight: 0,
+            fillColor: color,
+            fillOpacity: 0.2 + t * 0.22,
+            interactive: false
+          }).addTo(heatLayer);
+        });
+      }
 
       function renderSpots(list) {
         spotLayer.clearLayers();
@@ -447,6 +494,9 @@ function buildMapPage(opts: {
         setMarkers: function(list) {
           markers = list || [];
           renderSpots(markers);
+        },
+        setHeatLayer: function(list) {
+          renderHeat(list || []);
         },
         setRadiusCircle: function(meters, plat, plng) {
           radiusMeters = meters;
@@ -514,6 +564,7 @@ function buildMapPage(opts: {
           let radiusMeters = null;
           let radiusCenter = { lat: lat, lng: lng };
           let spotOverlays = [];
+          let heatCircles = [];
           const meHost = document.createElement('div');
           meHost.innerHTML = meHtml();
           const meWrap = meHost.firstChild;
@@ -587,6 +638,29 @@ function buildMapPage(opts: {
             animFrame = requestAnimationFrame(step);
           }
 
+          function renderHeat(list) {
+            heatCircles.forEach(function(c) { c.setMap(null); });
+            heatCircles = [];
+            (list || []).forEach(function(h) {
+              if (!Number.isFinite(h.lat) || !Number.isFinite(h.lng)) return;
+              const intensity = Number(h.intensity);
+              const t = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0.5;
+              const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 180;
+              const color = h.fillColor || '#ea580c';
+              const circle = new kakao.maps.Circle({
+                center: new kakao.maps.LatLng(h.lat, h.lng),
+                radius: radius,
+                strokeWeight: 0,
+                strokeOpacity: 0,
+                fillColor: color,
+                fillOpacity: 0.2 + t * 0.22,
+                zIndex: 1
+              });
+              circle.setMap(map);
+              heatCircles.push(circle);
+            });
+          }
+
           function renderSpots(list) {
             spotOverlays.forEach(function(o) { o.setMap(null); });
             spotOverlays = [];
@@ -641,6 +715,9 @@ function buildMapPage(opts: {
             setMarkers: function(list) {
               markers = list || [];
               renderSpots(markers);
+            },
+            setHeatLayer: function(list) {
+              renderHeat(list || []);
             },
             setRadiusCircle: function(meters, plat, plng) {
               radiusMeters = meters;

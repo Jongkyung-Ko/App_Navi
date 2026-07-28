@@ -43,7 +43,12 @@ import type {
 import { formatAreaBandLabel } from '../src/utils/areaBands';
 import { confirmMapInvestigate } from '../src/utils/confirm';
 import { distanceMeters } from '../src/utils/geo';
-import { buildStyledMapMarkers, sortBySalePriceDesc } from '../src/utils/mapMarkers';
+import {
+  buildPyeongHeatPoints,
+  buildStyledMapMarkers,
+  sortBySalePriceDesc,
+  type MapPriceMode,
+} from '../src/utils/mapMarkers';
 import {
   buildNearbyNarration,
   buildTop3ChangedScript,
@@ -78,6 +83,7 @@ export default function HomeScreen() {
   const [moveStatus, setMoveStatus] = useState<string | null>(null);
   const [mapFocus, setMapFocus] = useState<UserLocation | null>(null);
   const [mapAddress, setMapAddress] = useState<ReverseGeocodeResult | null>(null);
+  const [mapPriceMode, setMapPriceMode] = useState<MapPriceMode>('sale');
   const [investigating, setInvestigating] = useState(false);
   const [showTop3Card, setShowTop3Card] = useState(false);
   /** Live GPS for the blue map marker (updated more often than address refresh). */
@@ -216,7 +222,8 @@ export default function HomeScreen() {
           areaTarget: selectedArea,
           radiusKm: search.scope === 'radius' ? search.radiusKm : undefined,
         });
-        const ranked = sortBySalePriceDesc(res.complexes).slice(0, 20);
+        // Keep enough geocoded complexes for 평단가 heat overlay; list still shows top 8.
+        const ranked = sortBySalePriceDesc(res.complexes).slice(0, 60);
         setComplexes(ranked);
         const bandTargets = res.areaBands?.map((b) => b.targetM2) ?? [];
         if (bandTargets.length) setAvailableAreaTargets(bandTargets);
@@ -578,6 +585,7 @@ export default function HomeScreen() {
   const searchScopeLabel = scopeLabel(nearbySettings);
 
   const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 20), [complexes]);
+  const mapHeatPoints = useMemo(() => buildPyeongHeatPoints(complexes, 60), [complexes]);
   const rankedList = useMemo(() => sortBySalePriceDesc(complexes).slice(0, 8), [complexes]);
 
   const lat =
@@ -634,6 +642,8 @@ export default function HomeScreen() {
           lng={lng}
           jsKey={jsKey}
           markers={mapMarkers}
+          heatPoints={mapHeatPoints}
+          mapPriceMode={mapPriceMode}
           height={360}
           userLat={userLoc?.lat ?? null}
           userLng={userLoc?.lng ?? null}
@@ -664,6 +674,33 @@ export default function HomeScreen() {
             onChange={onChangeAreaTarget}
             availableTargets={availableAreaTargets}
           />
+        </View>
+        <View style={styles.mapMetricToggle} pointerEvents="box-none">
+          <Pressable
+            accessibilityLabel="시세로 보기"
+            onPress={() => setMapPriceMode('sale')}
+            style={[styles.mapMetricChip, mapPriceMode === 'sale' && styles.mapMetricChipOn]}
+          >
+            <Text
+              style={[styles.mapMetricChipText, mapPriceMode === 'sale' && styles.mapMetricChipTextOn]}
+            >
+              시세
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="평단가로 보기"
+            onPress={() => setMapPriceMode('pyeong')}
+            style={[styles.mapMetricChip, mapPriceMode === 'pyeong' && styles.mapMetricChipOn]}
+          >
+            <Text
+              style={[
+                styles.mapMetricChipText,
+                mapPriceMode === 'pyeong' && styles.mapMetricChipTextOn,
+              ]}
+            >
+              평단가
+            </Text>
+          </Pressable>
         </View>
         <Pressable
           accessibilityLabel="현재 위치로 이동"
@@ -866,9 +903,41 @@ const styles = StyleSheet.create({
   mapAreaChips: {
     position: 'absolute',
     left: 8,
-    right: 52,
+    right: 120,
     top: 8,
     zIndex: 6,
+  },
+  mapMetricToggle: {
+    position: 'absolute',
+    right: 10,
+    top: 10,
+    zIndex: 7,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  mapMetricChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  mapMetricChipOn: {
+    backgroundColor: '#1a2332',
+  },
+  mapMetricChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5c6670',
+  },
+  mapMetricChipTextOn: {
+    color: '#fff',
   },
   locateBtn: {
     position: 'absolute',
