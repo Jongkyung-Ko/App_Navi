@@ -823,7 +823,6 @@ export default function HomeScreen() {
               <FullscreenTextCardOverlay
                 enabled={textCardsOn}
                 narration={narration}
-                areaLabel={areaFilterLabel}
               />
             ) : null}
             {narrationOn ? (
