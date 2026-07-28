@@ -330,7 +330,7 @@ def main() -> int:
         for r in reports
     )
     summary = {
-        "createdAt": datetime.utcnow().isoformat() + "Z",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
         "files": len(files),
         "rowsIn": sum(r["rowsIn"] for r in reports),
         "rowsOut": sum(r["rowsOut"] for r in reports),
@@ -338,7 +338,7 @@ def main() -> int:
         "bucketFiles": len(bucket_counts),
         "reports": reports,
     }
-    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = REPORT_DIR / f"extract-{stamp}.json"
     out.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"report": str(out.relative_to(ROOT)), "safeForMerge": safe, "rowsOut": summary["rowsOut"]}, ensure_ascii=False))

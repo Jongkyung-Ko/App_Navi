@@ -18,7 +18,7 @@ import sys
 import time
 import urllib.parse
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -286,7 +286,7 @@ def main() -> int:
             )
         time.sleep(3)
 
-    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     manifest = {
         "createdAt": stamp,
         "source": "https://rt.molit.go.kr/pt/xls/xls.do",
