@@ -190,6 +190,16 @@ export function PriceHistoryChart({
     [chartDots, visible],
   );
 
+  const yTicks = useMemo(() => {
+    const top = max;
+    const mid = max / 2;
+    return [
+      { key: 'max', value: top, label: formatManwonCompact(top), y: valueToY(top, max) },
+      { key: 'mid', value: mid, label: formatManwonCompact(mid), y: valueToY(mid, max) },
+      { key: 'min', value: 0, label: '0', y: valueToY(0, max) },
+    ];
+  }, [max]);
+
   if (quarterly.length === 0) {
     return (
       <View style={styles.wrap}>
@@ -221,25 +231,39 @@ export function PriceHistoryChart({
         누르면 닫힘
       </Text>
 
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        onContentSizeChange={scrollToRecent}
-      >
-        <View style={{ width: chartWidth }}>
-          <View
-            style={[styles.plot, { height: CHART_H, width: chartWidth }]}
-            onLayout={(e: LayoutChangeEvent) => {
-              plotWidthRef.current = e.nativeEvent.layout.width;
-            }}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => true}
-            onResponderGrant={onGrant}
-            onResponderMove={onMove}
-            onResponderRelease={endHold}
-            onResponderTerminate={endHold}
-          >
+      <View style={styles.chartRow}>
+        <View style={[styles.yAxis, { height: CHART_H }]} pointerEvents="none">
+          {yTicks.map((tick) => (
+            <Text
+              key={tick.key}
+              style={[styles.yTick, { top: Math.max(0, tick.y - 7) }]}
+              numberOfLines={1}
+            >
+              {tick.label}
+            </Text>
+          ))}
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          style={styles.chartScroll}
+          showsHorizontalScrollIndicator={false}
+          onContentSizeChange={scrollToRecent}
+        >
+          <View style={{ width: chartWidth }}>
+            <View
+              style={[styles.plot, { height: CHART_H, width: chartWidth }]}
+              onLayout={(e: LayoutChangeEvent) => {
+                plotWidthRef.current = e.nativeEvent.layout.width;
+              }}
+              onStartShouldSetResponder={() => true}
+              onMoveShouldSetResponder={() => true}
+              onResponderGrant={onGrant}
+              onResponderMove={onMove}
+              onResponderRelease={endHold}
+              onResponderTerminate={endHold}
+            >
             {/* Trade scatter under lines */}
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               {visibleDots.map((d, idx) => {
@@ -347,6 +371,7 @@ export function PriceHistoryChart({
           </View>
         </View>
       </ScrollView>
+      </View>
     </View>
   );
 }
@@ -548,6 +573,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#8a939c',
     marginBottom: 10,
+  },
+  chartRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  yAxis: {
+    width: 44,
+    marginRight: 4,
+    position: 'relative',
+  },
+  yTick: {
+    position: 'absolute',
+    right: 0,
+    width: 44,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6b7580',
+    textAlign: 'right',
+  },
+  chartScroll: {
+    flex: 1,
   },
   plot: {
     borderBottomWidth: StyleSheet.hairlineWidth,
