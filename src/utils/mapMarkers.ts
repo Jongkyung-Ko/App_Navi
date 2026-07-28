@@ -37,8 +37,9 @@ const TIER = {
 const RADIUS_MIN = 10;
 const RADIUS_MAX = 22;
 const TOP_N = 10;
-const HEAT_MIN_M = 140;
-const HEAT_MAX_M = 260;
+/** Larger blobs so heat reads over Kakao road/outline contrast. */
+const HEAT_MIN_M = 320;
+const HEAT_MAX_M = 560;
 
 function priceTertileThresholds(sortedAsc: number[]): { lowMax: number; midMax: number } {
   const n = sortedAsc.length;
