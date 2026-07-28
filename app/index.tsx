@@ -96,8 +96,8 @@ export default function HomeScreen() {
   const [followUser, setFollowUser] = useState(true);
   /** Expand map to fullscreen while keeping home narration state alive. */
   const [mapFullscreen, setMapFullscreen] = useState(false);
-  /** Fullscreen-only text cards driven by narration settings (when speech is off). */
-  const [textCardsOn, setTextCardsOn] = useState(false);
+  /** Fullscreen text cards driven by narration settings (independent of speech). */
+  const [textCardsOn, setTextCardsOn] = useState(true);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
@@ -619,15 +619,8 @@ export default function HomeScreen() {
   }, []);
 
   const closeMapFullscreen = useCallback(() => {
-    setTextCardsOn(false);
     setMapFullscreen(false);
   }, []);
-
-  useEffect(() => {
-    if (narrationOn || !mapFullscreen) {
-      setTextCardsOn(false);
-    }
-  }, [narrationOn, mapFullscreen]);
 
   const radiusMeters =
     nearbySettings.scope === 'radius' ? nearbySettings.radiusKm * 1000 : null;
@@ -777,16 +770,12 @@ export default function HomeScreen() {
       >
         <View style={[styles.fullscreenRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.fullscreenHeader}>
-            {!narrationOn ? (
-              <FullscreenTextCardToggle
-                enabled={textCardsOn}
-                onToggle={setTextCardsOn}
-                settings={narrationSettings}
-                canEnable={narration.top3.length > 0}
-              />
-            ) : (
-              <Text style={styles.fullscreenTitle}>맵 전체보기</Text>
-            )}
+            <FullscreenTextCardToggle
+              enabled={textCardsOn}
+              onToggle={setTextCardsOn}
+              settings={narrationSettings}
+              canEnable={narration.top3.length > 0}
+            />
             <Pressable
               accessibilityLabel="맵 전체보기 닫기"
               onPress={closeMapFullscreen}
@@ -819,12 +808,10 @@ export default function HomeScreen() {
               onUserInteract={onMapUserInteract}
             />
             {mapOverlayControls}
-            {!narrationOn ? (
-              <FullscreenTextCardOverlay
-                enabled={textCardsOn}
-                narration={narration}
-              />
-            ) : null}
+            <FullscreenTextCardOverlay
+              enabled={textCardsOn}
+              narration={narration}
+            />
             {narrationOn ? (
               <View style={styles.fullscreenNarration} pointerEvents="none">
                 <Text style={styles.fullscreenNarrationText}>
