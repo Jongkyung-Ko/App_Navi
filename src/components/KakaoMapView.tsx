@@ -1,15 +1,19 @@
 import React, { createElement, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { API_BASE_URL } from '../services/api';
-import type { MarkerPoint } from '../utils/mapMarkers';
+import type { HeatPoint, MapPriceMode, MarkerPoint } from '../utils/mapMarkers';
 
-export type { MarkerPoint };
+export type { HeatPoint, MapPriceMode, MarkerPoint };
 
 interface KakaoMapViewProps {
   lat: number;
   lng: number;
   jsKey: string | null;
   markers?: MarkerPoint[];
+  /** Soft heat blobs for 평단가 mode. */
+  heatPoints?: HeatPoint[];
+  /** Controls embed legend + whether heat or spots are primary. */
+  mapPriceMode?: MapPriceMode;
   height?: number;
   /** Live GPS position for the blue "my location" marker. */
   userLat?: number | null;
@@ -43,6 +47,8 @@ type MapCmd =
   | { type: 'appnavi:map-cmd'; cmd: 'setCenter'; lat: number; lng: number }
   | { type: 'appnavi:map-cmd'; cmd: 'setFocus'; lat: number | null; lng: number | null }
   | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] }
+  | { type: 'appnavi:map-cmd'; cmd: 'setHeatLayer'; points: HeatPoint[] }
+  | { type: 'appnavi:map-cmd'; cmd: 'setMapLegend'; mode: MapPriceMode }
   | {
       type: 'appnavi:map-cmd';
       cmd: 'setRadiusCircle';
@@ -59,6 +65,8 @@ export function KakaoMapView({
   lat,
   lng,
   markers = [],
+  heatPoints = [],
+  mapPriceMode = 'sale',
   height = 320,
   userLat = null,
   userLng = null,
@@ -89,6 +97,8 @@ export function KakaoMapView({
     focusLat,
     focusLng,
     markers,
+    heatPoints,
+    mapPriceMode,
     radiusMeters,
     radiusCenterLat,
     radiusCenterLng,
@@ -100,6 +110,8 @@ export function KakaoMapView({
     focusLat,
     focusLng,
     markers,
+    heatPoints,
+    mapPriceMode,
     radiusMeters,
     radiusCenterLat,
     radiusCenterLng,
@@ -158,13 +170,17 @@ export function KakaoMapView({
       postCmd({ type: 'appnavi:map-cmd', cmd: 'setFocus', lat: p.focusLat, lng: p.focusLng });
       postCmd({ type: 'appnavi:map-cmd', cmd: 'setCenter', lat: p.focusLat, lng: p.focusLng });
     }
-    if (p.markers.length > 0) {
-      postCmd({
-        type: 'appnavi:map-cmd',
-        cmd: 'setMarkers',
-        markers: p.markers.slice(0, 20),
-      });
-    }
+    postCmd({ type: 'appnavi:map-cmd', cmd: 'setMapLegend', mode: p.mapPriceMode });
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setMarkers',
+      markers: p.mapPriceMode === 'sale' ? p.markers.slice(0, 20) : [],
+    });
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setHeatLayer',
+      points: p.mapPriceMode === 'pyeong' ? p.heatPoints.slice(0, 80) : [],
+    });
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setRadiusCircle',
@@ -228,12 +244,18 @@ export function KakaoMapView({
   }, [focusLat, focusLng]);
 
   useEffect(() => {
+    postCmd({ type: 'appnavi:map-cmd', cmd: 'setMapLegend', mode: mapPriceMode });
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setMarkers',
-      markers: markers.slice(0, 20),
+      markers: mapPriceMode === 'sale' ? markers.slice(0, 20) : [],
     });
-  }, [markers]);
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setHeatLayer',
+      points: mapPriceMode === 'pyeong' ? heatPoints.slice(0, 80) : [],
+    });
+  }, [markers, heatPoints, mapPriceMode]);
 
   useEffect(() => {
     postCmd({

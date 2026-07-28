@@ -1,5 +1,7 @@
 import type { ComplexSummary } from '../types';
-import { formatManwonCompact } from './format';
+import { formatManwonCompact, formatPyeongPrice } from './format';
+
+export type MapPriceMode = 'sale' | 'pyeong';
 
 export interface MarkerPoint {
   lat: number;
@@ -14,6 +16,18 @@ export interface MarkerPoint {
   tier?: 'high' | 'mid' | 'low';
 }
 
+/** Soft heat blob for 평단가 mode (meters + 0..1 intensity). */
+export interface HeatPoint {
+  lat: number;
+  lng: number;
+  /** 0..1 normalized heat */
+  intensity: number;
+  /** Blob radius in meters */
+  radiusM: number;
+  fillColor: string;
+  title?: string;
+}
+
 const TIER = {
   high: { fill: 'rgba(220, 38, 38, 0.55)', stroke: 'rgba(185, 28, 28, 0.9)' },
   mid: { fill: 'rgba(234, 88, 12, 0.55)', stroke: 'rgba(194, 65, 12, 0.9)' },
@@ -23,6 +37,8 @@ const TIER = {
 const RADIUS_MIN = 10;
 const RADIUS_MAX = 22;
 const TOP_N = 10;
+const HEAT_MIN_M = 140;
+const HEAT_MAX_M = 260;
 
 function priceTertileThresholds(sortedAsc: number[]): { lowMax: number; midMax: number } {
   const n = sortedAsc.length;
@@ -45,8 +61,34 @@ function radiusForCount(count: number, minC: number, maxC: number): number {
   return Math.round(RADIUS_MIN + t * (RADIUS_MAX - RADIUS_MIN));
 }
 
+/** Teal → yellow → orange → red for continuous heat (hex). */
+export function heatFillColor(t: number): string {
+  const x = Math.max(0, Math.min(1, t));
+  let r: number;
+  let g: number;
+  let b: number;
+  if (x < 0.33) {
+    const u = x / 0.33;
+    r = Math.round(20 + u * (234 - 20));
+    g = Math.round(184 + u * (179 - 184));
+    b = Math.round(166 + u * (8 - 166));
+  } else if (x < 0.66) {
+    const u = (x - 0.33) / 0.33;
+    r = 234;
+    g = Math.round(179 + u * (88 - 179));
+    b = Math.round(8 + u * (12 - 8));
+  } else {
+    const u = (x - 0.66) / 0.34;
+    r = Math.round(234 + u * (220 - 234));
+    g = Math.round(88 + u * (38 - 88));
+    b = Math.round(12 + u * (38 - 12));
+  }
+  const hex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
 /**
- * Style map spots:
+ * Style map spots (시세 mode):
  * - Rank by sale price, take Top 10 → split into high/mid/low (red/orange/yellow)
  * - Everything outside Top 10 → low (yellow)
  * - Circle size scales with trade volume among visible markers
@@ -56,7 +98,7 @@ export function buildStyledMapMarkers(
   limit = 20,
 ): MarkerPoint[] {
   const withCoords = complexes
-    .filter((c) => c.lat != null && c.lng != null && Number.isFinite(c.medianPrice))
+    .filter((c) => c.lat != null && c.lng != null && Number.isFinite(c.medianPrice) && c.medianPrice > 0)
     .slice(0, limit);
 
   if (withCoords.length === 0) return [];
@@ -89,6 +131,45 @@ export function buildStyledMapMarkers(
       radius: radiusForCount(tradeCount, minC, maxC),
       fillColor: colors.fill,
       strokeColor: colors.stroke,
+    };
+  });
+}
+
+/**
+ * Soft overlapping heat blobs from 매매 평단가 (평단가 mode).
+ */
+export function buildPyeongHeatPoints(
+  complexes: ComplexSummary[],
+  limit = 60,
+): HeatPoint[] {
+  const withCoords = complexes
+    .filter(
+      (c) =>
+        c.lat != null &&
+        c.lng != null &&
+        Number.isFinite(c.avgPricePerPyeong) &&
+        c.avgPricePerPyeong > 0,
+    )
+    .sort((a, b) => b.avgPricePerPyeong - a.avgPricePerPyeong)
+    .slice(0, limit);
+
+  if (withCoords.length === 0) return [];
+
+  const values = withCoords.map((c) => c.avgPricePerPyeong);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+
+  return withCoords.map((c) => {
+    const t = maxV <= minV ? 0.5 : (c.avgPricePerPyeong - minV) / (maxV - minV);
+    const radiusM = Math.round(HEAT_MIN_M + t * (HEAT_MAX_M - HEAT_MIN_M));
+    const label = formatPyeongPrice(c.avgPricePerPyeong);
+    return {
+      lat: c.lat!,
+      lng: c.lng!,
+      intensity: t,
+      radiusM,
+      fillColor: heatFillColor(t),
+      title: `${c.aptName} · ${label}`,
     };
   });
 }
