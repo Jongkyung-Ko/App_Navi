@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -85,6 +85,7 @@ export function PriceHistoryChart({
   const [visible, setVisible] = useState<VisibleMap>(DEFAULT_VISIBLE);
   const [scrub, setScrub] = useState<ScrubState | null>(null);
   const plotWidthRef = useRef(0);
+  const scrollRef = useRef<ScrollView>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holding = useRef(false);
   const pendingDismiss = useRef(false);
@@ -107,6 +108,19 @@ export function PriceHistoryChart({
   }, [quarterly, activeSeries, chartDots, visible]);
 
   const chartWidth = Math.max(quarterly.length * COL_W, COL_W);
+
+  /** Keep the recent end in view (not the oldest 10y start). */
+  const scrollToRecent = () => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    });
+  };
+
+  useEffect(() => {
+    scrollToRecent();
+    const t = setTimeout(scrollToRecent, 50);
+    return () => clearTimeout(t);
+  }, [quarterly.length, chartWidth]);
 
   const toggleSeries = (key: SeriesKey) => {
     setVisible((prev) => {
@@ -207,7 +221,12 @@ export function PriceHistoryChart({
         누르면 닫힘
       </Text>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        onContentSizeChange={scrollToRecent}
+      >
         <View style={{ width: chartWidth }}>
           <View
             style={[styles.plot, { height: CHART_H, width: chartWidth }]}
