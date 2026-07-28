@@ -1,0 +1,57 @@
+{
+  "createdAt": "2026-07-28T04:10:31.055717Z",
+  "files": 1,
+  "rowsIn": 57757,
+  "rowsOut": 55169,
+  "safeForMerge": true,
+  "bucketFiles": 300,
+  "reports": [
+    {
+      "file": "data/molit-raw/downloads/11000_sale_2024.csv",
+      "kind": "sale",
+      "headerIndex": 15,
+      "fieldnames": [
+        "NO",
+        "시군구",
+        "번지",
+        "본번",
+        "부번",
+        "단지명",
+        "전용면적(㎡)",
+        "계약년월",
+        "계약일",
+        "거래금액(만원)",
+        "동",
+        "층",
+        "매수자",
+        "매도자",
+        "건축년도",
+        "도로명",
+        "해제사유발생일",
+        "거래유형",
+        "중개사소재지",
+        "등기일자"
+      ],
+      "missingRequired": [],
+      "rowsIn": 57757,
+      "rowsOut": 55169,
+      "unmappedSigungu": {},
+      "cancelledSkipped": 2588,
+      "monthlyRentSkipped": 0,
+      "parseErrors": 0,
+      "byLawdMonthCount": 300,
+      "sampleBuckets": {
+        "11710:202407:sale": 719,
+        "11350:202407:sale": 712,
+        "11710:202406:sale": 600,
+        "11740:202406:sale": 580,
+        "11680:202407:sale": 575,
+        "11740:202407:sale": 570,
+        "11350:202408:sale": 506,
+        "11650:202407:sale": 498,
+        "11680:202406:sale": 483,
+        "11650:202406:sale": 479
+      }
+    }
+  ]
+}
