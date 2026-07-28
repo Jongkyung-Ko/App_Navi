@@ -30,6 +30,8 @@ export interface ComplexSummary {
   maxArea: number;
   lat?: number;
   lng?: number;
+  /** Meters from request origin when radiusKm filter is applied. */
+  distanceM?: number;
   monthly: MonthlyTrend[];
   recentTrades: ApartmentTrade[];
   trendSummary: string;

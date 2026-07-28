@@ -121,26 +121,39 @@ export async function searchPlaceKeyword(
   query: string,
   lat?: number,
   lng?: number,
+  radiusM = 5000,
 ): Promise<{ lat: number; lng: number; placeName: string } | null> {
   const key = process.env.KAKAO_REST_KEY;
   if (!key || key.startsWith('your_')) return null;
+
+  const cacheKey = `place:${query}:${lat?.toFixed(3) ?? ''},${lng?.toFixed(3) ?? ''}:${radiusM}`;
+  const cached = cacheGet<{ lat: number; lng: number; placeName: string } | null>(cacheKey);
+  if (cached !== undefined) return cached;
 
   const params = new URLSearchParams({ query, size: '1' });
   if (lat !== undefined && lng !== undefined) {
     params.set('y', String(lat));
     params.set('x', String(lng));
-    params.set('radius', '5000');
+    params.set('radius', String(Math.min(20000, Math.max(1000, Math.round(radiusM)))));
   }
 
   const res = await fetch(`${KAKAO_LOCAL_BASE}/search/keyword.json?${params}`, {
     headers: { Authorization: `KakaoAK ${key}` },
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    cacheSet(cacheKey, null, 300);
+    return null;
+  }
 
   const json = (await res.json()) as {
     documents?: Array<{ place_name: string; y: string; x: string }>;
   };
   const hit = json.documents?.[0];
-  if (!hit) return null;
-  return { placeName: hit.place_name, lat: Number(hit.y), lng: Number(hit.x) };
+  if (!hit) {
+    cacheSet(cacheKey, null, 1800);
+    return null;
+  }
+  const result = { placeName: hit.place_name, lat: Number(hit.y), lng: Number(hit.x) };
+  cacheSet(cacheKey, result);
+  return result;
 }

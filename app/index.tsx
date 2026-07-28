@@ -18,10 +18,13 @@ import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { NarrationToggle } from '../src/components/NarrationToggle';
 import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall';
+import { SearchScopeChips } from '../src/components/SearchScopeChips';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
+import { useNearbySettings } from '../src/hooks/useNearbySettings';
 import { usePwaInstall } from '../src/hooks/usePwaInstall';
 import { fetchKakaoJsKey, fetchNearbyComplexes, reverseGeocode } from '../src/services/api';
 import { getNearbyCache, setNearbyCache } from '../src/services/nearbyCache';
+import { formatRadiusLabel, scopeLabel } from '../src/services/nearbySettings';
 import {
   getCurrentLocation,
   LocationError,
@@ -29,7 +32,12 @@ import {
   watchLocationChanges,
 } from '../src/services/location';
 import { speakNarration, stopNarration } from '../src/services/speech';
-import type { ComplexSummary, ReverseGeocodeResult, UserLocation } from '../src/types';
+import type {
+  ComplexSummary,
+  NearbySearchScope,
+  ReverseGeocodeResult,
+  UserLocation,
+} from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
 import { confirmMapInvestigate } from '../src/utils/confirm';
 import { distanceMeters } from '../src/utils/geo';
@@ -51,6 +59,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { location, address, loading, error, refresh } = useCurrentLocation();
+  const { settings: nearbySettings, ready: nearbySettingsReady, update: updateNearbySettings } =
+    useNearbySettings();
   const pwa = usePwaInstall();
   const [jsKey, setJsKey] = useState<string | null>(null);
   const [complexes, setComplexes] = useState<ComplexSummary[]>([]);
@@ -84,6 +94,7 @@ export default function HomeScreen() {
   const areaTargetRef = useRef(areaTarget);
   const mapFocusRef = useRef(mapFocus);
   const mapAddressRef = useRef(mapAddress);
+  const nearbySettingsRef = useRef(nearbySettings);
   const idleReturnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** True after a successful 매매가 investigate — blocks 15s auto-return until locate is pressed. */
   const priceLockRef = useRef(false);
@@ -93,8 +104,11 @@ export default function HomeScreen() {
   areaTargetRef.current = areaTarget;
   mapFocusRef.current = mapFocus;
   mapAddressRef.current = mapAddress;
+  nearbySettingsRef.current = nearbySettings;
 
   const userLoc = liveLocation ?? location;
+  /** Stable point for trade lookups — avoid refetching on every live GPS tick. */
+  const searchLoc = mapFocus ?? location ?? liveLocation;
   const activeLoc = mapFocus ?? userLoc;
   const activeAddress = mapFocus ? mapAddress : address;
 
@@ -184,6 +198,7 @@ export default function HomeScreen() {
       const lng = opts?.lng ?? focus?.lng ?? locationRef.current?.lng;
       const selectedArea =
         opts && 'areaTarget' in opts ? opts.areaTarget : areaTargetRef.current;
+      const search = nearbySettingsRef.current;
       if (!lawdCd || lat === undefined || lng === undefined) return;
 
       if (!opts?.quiet) setListLoading(true);
@@ -196,6 +211,7 @@ export default function HomeScreen() {
           lat,
           lng,
           areaTarget: selectedArea,
+          radiusKm: search.scope === 'radius' ? search.radiusKm : undefined,
         });
         const ranked = sortBySalePriceDesc(res.complexes).slice(0, 20);
         setComplexes(ranked);
@@ -206,6 +222,8 @@ export default function HomeScreen() {
           setNearbyCache({
             lawdCd,
             areaTarget: selectedArea,
+            scope: search.scope,
+            radiusKm: search.scope === 'radius' ? search.radiusKm : undefined,
             complexes: ranked,
             areaBands: bandTargets,
           });
@@ -220,17 +238,27 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    if (!activeAddress?.lawdCd || !activeLoc) return;
+    if (!nearbySettingsReady) return;
+    if (!activeAddress?.lawdCd || !searchLoc) return;
     if (skipAutoLoad.current) {
       skipAutoLoad.current = false;
       return;
     }
     void loadComplexes({
       lawdCd: activeAddress.lawdCd,
-      lat: activeLoc.lat,
-      lng: activeLoc.lng,
+      lat: searchLoc.lat,
+      lng: searchLoc.lng,
     });
-  }, [loadComplexes, activeAddress?.lawdCd, activeLoc?.lat, activeLoc?.lng, areaTarget]);
+  }, [
+    loadComplexes,
+    nearbySettingsReady,
+    nearbySettings.scope,
+    nearbySettings.radiusKm,
+    activeAddress?.lawdCd,
+    searchLoc?.lat,
+    searchLoc?.lng,
+    areaTarget,
+  ]);
 
   const goToMyLocation = useCallback(async () => {
     setInvestigating(true);
@@ -240,7 +268,13 @@ export default function HomeScreen() {
       const loc = await getCurrentLocation();
       setLiveLocation(loc);
       const geo = await reverseGeocode(loc.lat, loc.lng);
-      const cached = getNearbyCache(geo.lawdCd, areaTargetRef.current);
+      const search = nearbySettingsRef.current;
+      const cached = getNearbyCache(
+        geo.lawdCd,
+        areaTargetRef.current,
+        search.scope,
+        search.scope === 'radius' ? search.radiusKm : undefined,
+      );
       skipAutoLoad.current = true;
       await refresh();
       if (cached && cached.complexes.length > 0) {
@@ -272,7 +306,7 @@ export default function HomeScreen() {
 
   const investigateAt = useCallback(
     async (plat: number, plng: number) => {
-      const ok = await confirmMapInvestigate();
+      const ok = await confirmMapInvestigate(nearbySettingsRef.current);
       if (!ok) return;
       setInvestigating(true);
       setListError(null);
@@ -508,9 +542,16 @@ export default function HomeScreen() {
     setAreaTarget(next);
   };
 
+  const onChangeSearchScope = (scope: NearbySearchScope) => {
+    narrationFingerprint.current = null;
+    announcedTop3Key.current = null;
+    void updateNearbySettings({ scope });
+  };
+
   const areaNavParam = areaTarget !== undefined ? String(areaTarget) : undefined;
   const areaFilterLabel =
     areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
+  const searchScopeLabel = scopeLabel(nearbySettings);
 
   const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 20), [complexes]);
   const rankedList = useMemo(() => sortBySalePriceDesc(complexes).slice(0, 8), [complexes]);
@@ -542,6 +583,13 @@ export default function HomeScreen() {
           title: 'App Navi',
           headerRight: () => (
             <View style={styles.headerRight}>
+              <Pressable
+                accessibilityLabel="설정"
+                onPress={() => router.push('/settings')}
+                style={styles.settingsHeaderBtn}
+              >
+                <Text style={styles.settingsHeaderText}>설정</Text>
+              </Pressable>
               <PwaInstallButton
                 compact
                 installed={pwa.isInstalled}
@@ -599,14 +647,28 @@ export default function HomeScreen() {
         ) : null}
       </View>
 
-      <AddressCard address={activeAddress} loading={loading || investigating} />
+      <AddressCard
+        address={activeAddress}
+        loading={loading || investigating}
+        searchSettings={nearbySettings}
+      />
+      <SearchScopeChips
+        scope={nearbySettings.scope}
+        radiusKm={nearbySettings.radiusKm}
+        onChange={onChangeSearchScope}
+        onPressRadiusSettings={() => router.push('/settings')}
+      />
       {usingMapFocus ? (
         <Text style={styles.focusHint}>
-          선택한 지점의 시군구(구·시·군) 범위로 매매가를 조사합니다
+          {nearbySettings.scope === 'radius'
+            ? `선택한 지점 기준 반경 ${formatRadiusLabel(nearbySettings.radiusKm)}로 매매가를 조사합니다`
+            : '선택한 지점의 시군구(구·시·군) 범위로 매매가를 조사합니다'}
         </Text>
       ) : (
         <Text style={styles.focusHint}>
-          현재 위치 또는 길게 누른 지점의 시군구(구·시·군) 단위로 매매가를 조사합니다
+          {nearbySettings.scope === 'radius'
+            ? `현재 위치 반경 ${formatRadiusLabel(nearbySettings.radiusKm)} 안 단지를 찾습니다 · 설정에서 반경 변경`
+            : '현재 위치 또는 길게 누른 지점의 시군구(구·시·군) 단위로 매매가를 조사합니다'}
         </Text>
       )}
       <ErrorBanner message={error ?? listError} />
@@ -671,8 +733,14 @@ export default function HomeScreen() {
                 lat: String(lat),
                 lng: String(lng),
                 region:
-                  activeAddress.sigunguLabel ??
-                  `${activeAddress.region1} ${activeAddress.region2}`,
+                  nearbySettings.scope === 'radius'
+                    ? `반경 ${formatRadiusLabel(nearbySettings.radiusKm)}`
+                    : activeAddress.sigunguLabel ??
+                      `${activeAddress.region1} ${activeAddress.region2}`,
+                scope: nearbySettings.scope,
+                ...(nearbySettings.scope === 'radius'
+                  ? { radiusKm: String(nearbySettings.radiusKm) }
+                  : {}),
                 ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             });
@@ -686,7 +754,7 @@ export default function HomeScreen() {
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>주변 단지 시세</Text>
         <Text style={styles.sectionSub}>
-          시군구(구·시·군) 단위 · 매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
+          {searchScopeLabel} · 매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
         </Text>
       </View>
 
@@ -696,9 +764,13 @@ export default function HomeScreen() {
         <ComplexList
           items={rankedList}
           emptyMessage={
-            areaTarget !== undefined
-              ? `이 지역에 ${areaFilterLabel} 최근 실거래가 없습니다.`
-              : '이 지역에 최근 아파트 실거래가 없습니다.'
+            nearbySettings.scope === 'radius'
+              ? areaTarget !== undefined
+                ? `반경 ${formatRadiusLabel(nearbySettings.radiusKm)} 안 ${areaFilterLabel} 최근 실거래가 없습니다.`
+                : `반경 ${formatRadiusLabel(nearbySettings.radiusKm)} 안 최근 아파트 실거래가 없습니다.`
+              : areaTarget !== undefined
+                ? `이 지역에 ${areaFilterLabel} 최근 실거래가 없습니다.`
+                : '이 지역에 최근 아파트 실거래가 없습니다.'
           }
           onPress={(item) =>
             router.push({
@@ -728,7 +800,19 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     justifyContent: 'center',
+  },
+  settingsHeaderBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  settingsHeaderText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1a2332',
   },
   mapAreaChips: {
     position: 'absolute',

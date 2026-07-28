@@ -84,6 +84,8 @@ export interface ComplexSummary {
   maxArea: number;
   lat?: number;
   lng?: number;
+  /** Meters from search origin when radius mode is used. */
+  distanceM?: number;
   monthly: MonthlyTrend[];
   recentTrades: ApartmentTrade[];
   trendSummary: string;
@@ -121,7 +123,21 @@ export interface TradesResponse {
   complexes: ComplexSummary[];
   areaBands?: AreaBand[];
   selectedAreaTarget?: number | null;
+  /** Present when the request used radius filtering. */
+  radiusKm?: number | null;
   mock?: boolean;
+}
+
+/** How nearby complexes are scoped. */
+export type NearbySearchScope = 'sigungu' | 'radius';
+
+export const RADIUS_KM_OPTIONS = [0.5, 1, 2, 3, 5] as const;
+export type RadiusKmOption = (typeof RADIUS_KM_OPTIONS)[number];
+
+export interface NearbySearchSettings {
+  scope: NearbySearchScope;
+  /** Used when scope === 'radius'. Default 1. */
+  radiusKm: number;
 }
 
 export interface UserLocation {
