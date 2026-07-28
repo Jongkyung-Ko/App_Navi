@@ -35,6 +35,22 @@ export function formatPyeongPrice(pricePerPyeong: number): string {
   return `${Math.round(pricePerPyeong).toLocaleString('ko-KR')}만/평`;
 }
 
+/**
+ * Map heat label: 만원/평 → "0.89억/평" / "1.2억/평".
+ * Under 1억 uses 2 decimals; 1억+ uses 1 decimal.
+ */
+export function formatPyeongPriceEok(pricePerPyeong: number): string {
+  if (!Number.isFinite(pricePerPyeong) || pricePerPyeong <= 0) return '—';
+  const eok = pricePerPyeong / 10000;
+  if (eok >= 1) {
+    const one = Math.round(eok * 10) / 10;
+    const text = one.toFixed(1).replace(/\.0$/, '');
+    return `${text}억/평`;
+  }
+  const two = Math.round(eok * 100) / 100;
+  return `${two.toFixed(2)}억/평`;
+}
+
 export function formatArea(area: number): string {
   return `${area.toFixed(1)}㎡`;
 }

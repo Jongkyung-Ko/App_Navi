@@ -86,6 +86,16 @@ function buildMapPage(opts: {
     .spot-change.up { color: #c0392b; }
     .spot-change.down { color: #1f6f4a; }
     .spot-change.flat { color: #5c6670; }
+    .heat-label {
+      padding: 2px 7px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.96);
+      color: #1a2332;
+      font: 700 10px/1.2 sans-serif;
+      white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      pointer-events: none;
+    }
     .me-wrap {
       width: 28px;
       height: 28px;
@@ -469,6 +479,17 @@ function buildMapPage(opts: {
             fillOpacity: 0.42 + t * 0.28,
             interactive: false
           }).addTo(heatLayer);
+          const label = escapeHtml(h.priceLabel || '');
+          if (label) {
+            const icon = L.divIcon({
+              className: 'spot-icon',
+              html: '<div class="heat-label">' + label + '</div>',
+              iconSize: [88, 20],
+              iconAnchor: [44, 10]
+            });
+            L.marker([h.lat, h.lng], { icon: icon, interactive: false, keyboard: false })
+              .addTo(heatLayer);
+          }
         });
       }
 
@@ -589,6 +610,7 @@ function buildMapPage(opts: {
           let radiusCenter = { lat: lat, lng: lng };
           let spotOverlays = [];
           let heatCircles = [];
+          let heatLabels = [];
           const meHost = document.createElement('div');
           meHost.innerHTML = meHtml();
           const meWrap = meHost.firstChild;
@@ -664,15 +686,18 @@ function buildMapPage(opts: {
 
           function renderHeat(list) {
             heatCircles.forEach(function(c) { c.setMap(null); });
+            heatLabels.forEach(function(o) { o.setMap(null); });
             heatCircles = [];
+            heatLabels = [];
             (list || []).forEach(function(h) {
               if (!Number.isFinite(h.lat) || !Number.isFinite(h.lng)) return;
               const intensity = Number(h.intensity);
               const t = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0.5;
               const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 400;
               const color = h.fillColor || '#ea580c';
+              const center = new kakao.maps.LatLng(h.lat, h.lng);
               const circle = new kakao.maps.Circle({
-                center: new kakao.maps.LatLng(h.lat, h.lng),
+                center: center,
                 radius: radius,
                 strokeWeight: 0,
                 strokeOpacity: 0,
@@ -683,6 +708,21 @@ function buildMapPage(opts: {
               });
               circle.setMap(map);
               heatCircles.push(circle);
+              const label = String(h.priceLabel || '');
+              if (label) {
+                const el = document.createElement('div');
+                el.className = 'heat-label';
+                el.textContent = label;
+                const overlay = new kakao.maps.CustomOverlay({
+                  map: map,
+                  position: center,
+                  content: el,
+                  xAnchor: 0.5,
+                  yAnchor: 0.5,
+                  zIndex: 2
+                });
+                heatLabels.push(overlay);
+              }
             });
           }
 
