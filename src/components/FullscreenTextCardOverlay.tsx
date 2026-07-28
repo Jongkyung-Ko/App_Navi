@@ -1,17 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Switch, Text, View } from 'react-native';
-import { narrationMetricsLabel, narrationSettingsHint } from '../services/narrationSettings';
+import { narrationSettingsHint } from '../services/narrationSettings';
 import type { ComplexSummary, NarrationSettings } from '../types';
-import { formatComplexNarration, type NarrationStats } from '../utils/narration';
+import {
+  formatManwonSpoken,
+  top3Fingerprint,
+  type NarrationStats,
+} from '../utils/narration';
 
 export type TextCardTone = 'upHot' | 'up' | 'down' | 'flat';
 
 export type FullscreenTextCardModel = {
   id: string;
   rank: number;
-  title: string;
-  body: string;
-  callout: string;
+  name: string;
+  changeText: string;
+  arrow: string;
+  changeColor: string;
+  saleText: string;
+  jeonseText: string;
+  gapText: string;
+  callout: string | null;
   changePercent: number | null;
   tone: TextCardTone;
 };
@@ -36,35 +45,51 @@ export function toneForPyeongChange(pct: number | null): TextCardTone {
   return 'down';
 }
 
-export function calloutForPyeongChange(pct: number | null): string {
-  if (pct == null || !Number.isFinite(pct)) return '최근 매매평단가 변동 정보 없음';
-  if (Math.abs(pct) < 0.05) return '최근 매매평단가 보합';
-  if (pct >= 10) {
-    return `최근 매매평단가 10% 이상 급등 · +${pct.toFixed(1)}% · 많이 올랐습니다`;
-  }
-  if (pct >= 5) {
-    return `최근 매매평단가 5% 이상 상승 · +${pct.toFixed(1)}% · 많이 올랐습니다`;
-  }
-  if (pct > 0) return `최근 매매평단가 상승 · +${pct.toFixed(1)}%`;
-  return `최근 매매평단가 하락 · ${pct.toFixed(1)}%`;
+function changeColorFor(pct: number | null): string {
+  if (pct == null || !Number.isFinite(pct) || Math.abs(pct) < 0.05) return '#e5e7eb';
+  return pct > 0 ? '#fecaca' : '#bfdbfe';
+}
+
+function arrowFor(pct: number | null): string {
+  if (pct == null || !Number.isFinite(pct) || Math.abs(pct) < 0.05) return '';
+  return pct > 0 ? '▲' : '▼';
+}
+
+function changeTextFor(pct: number | null): string {
+  if (pct == null || !Number.isFinite(pct)) return '—';
+  if (Math.abs(pct) < 0.05) return '0%';
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+function calloutForPyeongChange(pct: number | null): string | null {
+  if (pct == null || !Number.isFinite(pct) || pct < 5) return null;
+  if (pct >= 10) return `최근 매매평단가 10% 이상 급등 · 많이 올랐습니다`;
+  return `최근 매매평단가 5% 이상 상승 · 많이 올랐습니다`;
 }
 
 export function buildFullscreenTextCards(
   narration: NarrationStats,
-  areaLabel?: string,
 ): FullscreenTextCardModel[] {
-  const metricsLabel = narrationMetricsLabel(narration.metrics);
-  const area = areaLabel ? `${areaLabel} · ` : '';
   return narration.top3.map((c, i) => {
     const changePercent = recentPyeongChange(c);
     return {
       id: c.id,
       rank: i + 1,
-      title: `${i + 1}위 · ${c.aptName}`,
-      body: [
-        `${area}매매가 Top ${narration.topCount} · ${metricsLabel}`,
-        formatComplexNarration(c, narration.metrics),
-      ].join('\n'),
+      name: c.aptName,
+      changeText: changeTextFor(changePercent),
+      arrow: arrowFor(changePercent),
+      changeColor: changeColorFor(changePercent),
+      saleText: c.medianPrice > 0 ? formatManwonSpoken(c.medianPrice) : '-',
+      jeonseText:
+        c.medianJeonse != null && c.medianJeonse > 0
+          ? formatManwonSpoken(c.medianJeonse)
+          : '-',
+      gapText:
+        c.saleJeonseGap != null && Number.isFinite(c.saleJeonseGap)
+          ? c.saleJeonseGap < 0
+            ? `${formatManwonSpoken(Math.abs(c.saleJeonseGap))} 역전`
+            : formatManwonSpoken(c.saleJeonseGap)
+          : '-',
       callout: calloutForPyeongChange(changePercent),
       changePercent,
       tone: toneForPyeongChange(changePercent),
@@ -109,29 +134,35 @@ export function FullscreenTextCardToggle({
 type OverlayProps = {
   enabled: boolean;
   narration: NarrationStats;
-  areaLabel?: string;
 };
 
-export function FullscreenTextCardOverlay({ enabled, narration, areaLabel }: OverlayProps) {
-  const cards = useMemo(
-    () => buildFullscreenTextCards(narration, areaLabel),
-    [narration, areaLabel],
+export function FullscreenTextCardOverlay({ enabled, narration }: OverlayProps) {
+  const cards = useMemo(() => buildFullscreenTextCards(narration), [narration]);
+  const fingerprint = useMemo(
+    () => top3Fingerprint(narration.top3, narration.metrics),
+    [narration.top3, narration.metrics],
   );
-  const cardKey = cards.map((c) => c.id).join('|');
   const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(false);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(ENTER_Y)).current;
   const cancelled = useRef(false);
+  const shownFingerprint = useRef<string | null>(null);
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
 
   useEffect(() => {
-    setIndex(0);
-  }, [cardKey]);
-
-  useEffect(() => {
     cancelled.current = false;
     if (!enabled || cards.length === 0) {
+      setVisible(false);
+      opacity.setValue(0);
+      translateY.setValue(ENTER_Y);
+      return;
+    }
+
+    // Already shown for this Top ranking — do not show again.
+    if (shownFingerprint.current === fingerprint) {
+      setVisible(false);
       opacity.setValue(0);
       translateY.setValue(ENTER_Y);
       return;
@@ -139,14 +170,28 @@ export function FullscreenTextCardOverlay({ enabled, narration, areaLabel }: Ove
 
     let timeout: ReturnType<typeof setTimeout> | null = null;
     let anim: Animated.CompositeAnimation | null = null;
+    setVisible(true);
 
-    const runCycle = (startIndex: number) => {
+    const finishPlaythrough = () => {
+      shownFingerprint.current = fingerprint;
+      setVisible(false);
+      opacity.setValue(0);
+      translateY.setValue(ENTER_Y);
+    };
+
+    const runOnce = (startIndex: number) => {
       if (cancelled.current) return;
       const list = cardsRef.current;
-      if (list.length === 0) return;
-      const i = ((startIndex % list.length) + list.length) % list.length;
-      setIndex(i);
+      if (list.length === 0) {
+        finishPlaythrough();
+        return;
+      }
+      if (startIndex >= list.length) {
+        finishPlaythrough();
+        return;
+      }
 
+      setIndex(startIndex);
       opacity.setValue(0);
       translateY.setValue(ENTER_Y);
 
@@ -185,13 +230,13 @@ export function FullscreenTextCardOverlay({ enabled, narration, areaLabel }: Ove
           ]);
           anim.start(({ finished: outDone }) => {
             if (!outDone || cancelled.current) return;
-            runCycle(i + 1);
+            runOnce(startIndex + 1);
           });
         }, HOLD_MS);
       });
     };
 
-    runCycle(0);
+    runOnce(0);
 
     return () => {
       cancelled.current = true;
@@ -200,9 +245,9 @@ export function FullscreenTextCardOverlay({ enabled, narration, areaLabel }: Ove
       opacity.stopAnimation();
       translateY.stopAnimation();
     };
-  }, [enabled, cards.length, cardKey, opacity, translateY]);
+  }, [enabled, fingerprint, cards.length, opacity, translateY]);
 
-  if (!enabled) return null;
+  if (!enabled || !visible) return null;
   const card = cards[index];
   if (!card) return null;
 
@@ -215,11 +260,26 @@ export function FullscreenTextCardOverlay({ enabled, narration, areaLabel }: Ove
           { opacity, transform: [{ translateY }] },
         ]}
       >
-        <Text style={styles.rank}>{card.title}</Text>
-        <Text style={styles.body}>{card.body}</Text>
-        <Text style={styles.callout}>{card.callout}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.name} numberOfLines={2}>
+            {card.name}
+          </Text>
+          <Text style={[styles.change, { color: card.changeColor }]}>
+            {card.changeText}
+            {card.arrow ? ` ${card.arrow}` : ''}
+          </Text>
+        </View>
+
+        <View style={styles.metrics}>
+          <Text style={styles.metricLine}>매매가: {card.saleText}</Text>
+          <Text style={styles.metricLine}>전세가: {card.jeonseText}</Text>
+          <Text style={styles.metricLine}>갭: {card.gapText}</Text>
+        </View>
+
+        {card.callout ? <Text style={styles.callout}>{card.callout}</Text> : null}
+
         <Text style={styles.footer}>
-          {index + 1}/{cards.length} · 나레이션 설정 기준
+          {index + 1}/{cards.length} · Top {narration.topCount}
         </Text>
       </Animated.View>
     </View>
@@ -285,32 +345,47 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.18)',
   },
   toneUpHot: {
-    backgroundColor: 'rgba(153, 27, 27, 0.92)',
+    backgroundColor: 'rgba(153, 27, 27, 0.94)',
   },
   toneUp: {
-    backgroundColor: 'rgba(185, 28, 28, 0.88)',
+    backgroundColor: 'rgba(185, 28, 28, 0.9)',
   },
   toneDown: {
-    backgroundColor: 'rgba(30, 64, 175, 0.88)',
+    backgroundColor: 'rgba(30, 64, 175, 0.9)',
   },
   toneFlat: {
-    backgroundColor: 'rgba(26, 35, 50, 0.9)',
+    backgroundColor: 'rgba(26, 35, 50, 0.92)',
   },
-  rank: {
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 28,
+  },
+  name: {
+    flex: 1,
     color: '#fff',
     fontSize: 28,
     fontWeight: '900',
     lineHeight: 34,
-    marginBottom: 16,
   },
-  body: {
-    color: 'rgba(255,255,255,0.95)',
-    fontSize: 22,
-    fontWeight: '700',
+  change: {
+    fontSize: 26,
+    fontWeight: '900',
     lineHeight: 34,
   },
+  metrics: {
+    gap: 14,
+  },
+  metricLine: {
+    color: 'rgba(255,255,255,0.96)',
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 32,
+  },
   callout: {
-    marginTop: 22,
+    marginTop: 24,
     color: '#fff',
     fontSize: 18,
     fontWeight: '800',
