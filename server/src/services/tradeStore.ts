@@ -39,12 +39,14 @@ function candidateDirs(): string[] {
 }
 
 function candidateArchives(): string[] {
-  return [
-    path.resolve(process.cwd(), 'data/molit-store/seoul-normalized.tgz'),
-    path.resolve(process.cwd(), '../data/molit-store/seoul-normalized.tgz'),
-    path.resolve(__dirname, '../../../data/molit-store/seoul-normalized.tgz'),
-    path.resolve(__dirname, '../../data/molit-store/seoul-normalized.tgz'),
+  const names = ['molit-normalized.tgz', 'seoul-normalized.tgz'];
+  const roots = [
+    path.resolve(process.cwd(), 'data/molit-store'),
+    path.resolve(process.cwd(), '../data/molit-store'),
+    path.resolve(__dirname, '../../../data/molit-store'),
+    path.resolve(__dirname, '../../data/molit-store'),
   ];
+  return roots.flatMap((root) => names.map((name) => path.join(root, name)));
 }
 
 /** Unpack packed store archive once when normalized/ is missing. */

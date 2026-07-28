@@ -42,10 +42,12 @@ python3 scripts/backfill/parse_rt_molit_csv.py \
 
 1. Pack normalized buckets:
    ```bash
-   tar -czf data/molit-store/seoul-normalized.tgz -C data/molit-store normalized
+   tar -czf data/molit-store/molit-normalized.tgz -C data/molit-store normalized
    ```
 2. Docker/Railway image extracts this archive to `MOLIT_STORE_DIR`.
 3. `/api/trades` reads store-first per `(lawdCd, month)`, then falls back to live MOLIT.
+
+Current packed coverage: **서울 25구 + 청주 4구** (상당/서원/흥덕/청원).
 
 ## Notes
 
