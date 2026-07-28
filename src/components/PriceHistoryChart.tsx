@@ -308,11 +308,21 @@ export function PriceHistoryChart({
                 <Text style={[styles.year, scrub?.index === idx && styles.yearActive]}>
                   {q.quarter === 1 ? String(q.year).slice(2) : `${q.quarter}Q`}
                 </Text>
-                {q.quarter === 1 ? (
-                  <Text style={styles.axisSub}>년</Text>
-                ) : (
-                  <Text style={styles.axisSub}> </Text>
-                )}
+                {visible.sale ? (
+                  <Text style={styles.tip}>
+                    {q.saleMedian !== null ? formatManwonCompact(q.saleMedian) : '-'}
+                  </Text>
+                ) : null}
+                {visible.jeonse ? (
+                  <Text style={[styles.tip, styles.tipJeonse]}>
+                    {q.jeonseMedian !== null ? formatManwonCompact(q.jeonseMedian) : '-'}
+                  </Text>
+                ) : null}
+                {visible.gap ? (
+                  <Text style={[styles.tip, styles.tipGap]}>
+                    {q.gap !== null ? formatManwonCompact(q.gap) : '-'}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </View>
@@ -342,11 +352,13 @@ function LineSeries({
     return { x, y, value };
   });
 
+  // Connect across empty quarters (skip nulls, join neighboring valid points)
+  const valid = points.filter((p): p is { x: number; y: number; value: number } => p !== null);
   const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a && b) segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+  for (let i = 0; i < valid.length - 1; i++) {
+    const a = valid[i]!;
+    const b = valid[i + 1]!;
+    segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
   }
 
   return (
@@ -608,11 +620,14 @@ const styles = StyleSheet.create({
   yearActive: {
     color: '#c45c26',
   },
-  axisSub: {
+  tip: {
+    marginTop: 2,
     fontSize: 8,
-    color: '#9aa3ad',
-    height: 10,
+    color: '#c45c26',
+    textAlign: 'center',
   },
+  tipJeonse: { color: '#2f6fed' },
+  tipGap: { color: '#1f6f4a' },
   empty: {
     color: '#6b7580',
     textAlign: 'center',
