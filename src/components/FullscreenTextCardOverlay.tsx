@@ -25,7 +25,7 @@ export type FullscreenTextCardModel = {
   tone: TextCardTone;
 };
 
-const HOLD_MS = 3000;
+const HOLD_MS = 10000;
 const FADE_MS = 420;
 const ENTER_Y = 56;
 const EXIT_Y = -56;
