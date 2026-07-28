@@ -1,5 +1,5 @@
 import type { ComplexSummary } from '../types';
-import { formatManwonCompact, formatPyeongPrice } from './format';
+import { formatManwonCompact, formatPyeongPriceEok } from './format';
 
 export type MapPriceMode = 'sale' | 'pyeong';
 
@@ -46,6 +46,8 @@ export interface HeatPoint {
   radiusM: number;
   fillColor: string;
   title?: string;
+  /** Compact 평단가 label e.g. "0.89억/평" */
+  priceLabel?: string;
 }
 
 const TIER = {
@@ -187,14 +189,15 @@ export function buildPyeongHeatPoints(
   return withCoords.map((c) => {
     const t = maxV <= minV ? 0.5 : (c.avgPricePerPyeong - minV) / (maxV - minV);
     const radiusM = Math.round(HEAT_MIN_M + t * (HEAT_MAX_M - HEAT_MIN_M));
-    const label = formatPyeongPrice(c.avgPricePerPyeong);
+    const priceLabel = formatPyeongPriceEok(c.avgPricePerPyeong);
     return {
       lat: c.lat!,
       lng: c.lng!,
       intensity: t,
       radiusM,
       fillColor: heatFillColor(t),
-      title: `${c.aptName} · ${label}`,
+      priceLabel,
+      title: `${c.aptName} · ${priceLabel}`,
     };
   });
 }
