@@ -14,6 +14,8 @@ interface KakaoMapViewProps {
   /** Live GPS position for the blue "my location" marker. */
   userLat?: number | null;
   userLng?: number | null;
+  /** Degrees from north for nav-style arrow; null shows a plain blue dot. */
+  userHeading?: number | null;
   /** When true, pan map to user location as it updates. */
   followUser?: boolean;
   /** Investigated point marker; null clears it. */
@@ -25,7 +27,14 @@ interface KakaoMapViewProps {
 }
 
 type MapCmd =
-  | { type: 'appnavi:map-cmd'; cmd: 'setUserLocation'; lat: number; lng: number; center: boolean }
+  | {
+      type: 'appnavi:map-cmd';
+      cmd: 'setUserLocation';
+      lat: number;
+      lng: number;
+      center: boolean;
+      heading?: number | null;
+    }
   | { type: 'appnavi:map-cmd'; cmd: 'setCenter'; lat: number; lng: number }
   | { type: 'appnavi:map-cmd'; cmd: 'setFocus'; lat: number | null; lng: number | null }
   | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] };
@@ -41,6 +50,7 @@ export function KakaoMapView({
   height = 320,
   userLat = null,
   userLng = null,
+  userHeading = null,
   followUser = false,
   focusLat = null,
   focusLng = null,
@@ -57,8 +67,8 @@ export function KakaoMapView({
   const followRef = useRef(followUser);
   followRef.current = followUser;
 
-  const propsRef = useRef({ userLat, userLng, focusLat, focusLng, markers });
-  propsRef.current = { userLat, userLng, focusLat, focusLng, markers };
+  const propsRef = useRef({ userLat, userLng, userHeading, focusLat, focusLng, markers });
+  propsRef.current = { userLat, userLng, userHeading, focusLat, focusLng, markers };
 
   // Stable initial URL — live updates go through postMessage.
   const initial = useRef({ lat, lng, markers });
@@ -106,6 +116,7 @@ export function KakaoMapView({
         lat: p.userLat,
         lng: p.userLng,
         center: followRef.current,
+        heading: p.userHeading ?? null,
       });
     }
     if (p.focusLat != null && p.focusLng != null) {
@@ -158,8 +169,9 @@ export function KakaoMapView({
       lat: userLat,
       lng: userLng,
       center: followUser,
+      heading: userHeading ?? null,
     });
-  }, [userLat, userLng, followUser]);
+  }, [userLat, userLng, userHeading, followUser]);
 
   useEffect(() => {
     if (focusLat != null && focusLng != null && Number.isFinite(focusLat) && Number.isFinite(focusLng)) {
@@ -169,13 +181,6 @@ export function KakaoMapView({
     }
     postCmd({ type: 'appnavi:map-cmd', cmd: 'setFocus', lat: null, lng: null });
   }, [focusLat, focusLng]);
-
-  // Force-center when parent lat/lng jumps (e.g. "내 위치로") while following.
-  useEffect(() => {
-    if (!followUser) return;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    postCmd({ type: 'appnavi:map-cmd', cmd: 'setCenter', lat, lng });
-  }, [lat, lng, followUser]);
 
   useEffect(() => {
     postCmd({

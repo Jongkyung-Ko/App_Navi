@@ -127,4 +127,6 @@ export interface TradesResponse {
 export interface UserLocation {
   lat: number;
   lng: number;
+  /** Degrees clockwise from north; null when unknown (nav-style marker). */
+  heading?: number | null;
 }

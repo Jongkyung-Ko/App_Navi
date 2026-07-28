@@ -25,6 +25,7 @@ import { getNearbyCache, setNearbyCache } from '../src/services/nearbyCache';
 import {
   getCurrentLocation,
   LocationError,
+  watchLiveLocation,
   watchLocationChanges,
 } from '../src/services/location';
 import { speakNarration, stopNarration } from '../src/services/speech';
@@ -123,17 +124,14 @@ export default function HomeScreen() {
     if (location) setLiveLocation(location);
   }, [location]);
 
-  // Continuous GPS for the blue "my location" marker + follow-centering.
+  // Nav-style live GPS for the blue marker + follow-centering (~1s / 1m).
   useEffect(() => {
     let cancelled = false;
     let subscription: { remove: () => void } | null = null;
-    void watchLocationChanges(
-      (loc) => {
-        if (cancelled) return;
-        setLiveLocation(loc);
-      },
-      { distanceInterval: 10, timeInterval: 5_000 },
-    )
+    void watchLiveLocation((loc) => {
+      if (cancelled) return;
+      setLiveLocation(loc);
+    })
       .then((sub) => {
         if (cancelled) {
           sub.remove();
@@ -567,6 +565,7 @@ export default function HomeScreen() {
           height={360}
           userLat={userLoc?.lat ?? null}
           userLng={userLoc?.lng ?? null}
+          userHeading={userLoc?.heading ?? null}
           followUser={followUser && !usingMapFocus}
           focusLat={mapFocus?.lat ?? null}
           focusLng={mapFocus?.lng ?? null}

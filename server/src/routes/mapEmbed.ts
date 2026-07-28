@@ -75,9 +75,11 @@ function buildMapPage(opts: {
       text-overflow: ellipsis;
     }
     .me-wrap {
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       position: relative;
+      transition: transform 0.2s linear;
+      will-change: transform;
     }
     .me-pulse {
       position: absolute;
@@ -88,13 +90,34 @@ function buildMapPage(opts: {
     }
     .me-dot {
       position: absolute;
-      left: 5px; top: 5px;
+      left: 8px; top: 8px;
       width: 12px; height: 12px;
       border-radius: 50%;
       background: #2563eb;
       border: 2px solid #fff;
       box-shadow: 0 1px 4px rgba(0,0,0,.35);
     }
+    .me-arrow {
+      position: absolute;
+      left: 5px; top: 3px;
+      width: 0; height: 0;
+      border-left: 9px solid transparent;
+      border-right: 9px solid transparent;
+      border-bottom: 20px solid #2563eb;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,.35));
+      display: none;
+    }
+    .me-arrow::after {
+      content: '';
+      position: absolute;
+      left: -5px; top: 5px;
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-bottom: 11px solid #fff;
+    }
+    .me-wrap.has-heading .me-dot { display: none; }
+    .me-wrap.has-heading .me-arrow { display: block; }
     @keyframes mePulse {
       0% { transform: scale(0.55); opacity: 0.9; }
       70% { transform: scale(1.35); opacity: 0; }
@@ -157,8 +180,21 @@ function buildMapPage(opts: {
     }
 
     function meHtml() {
-      return '<div class="me-wrap"><div class="me-pulse"></div><div class="me-dot"></div></div>';
+      return '<div class="me-wrap"><div class="me-pulse"></div><div class="me-dot"></div><div class="me-arrow"></div></div>';
     }
+
+    function applyHeading(el, heading) {
+      if (!el) return;
+      if (heading == null || !Number.isFinite(heading) || heading < 0) {
+        el.classList.remove('has-heading');
+        el.style.transform = '';
+        return;
+      }
+      el.classList.add('has-heading');
+      el.style.transform = 'rotate(' + heading + 'deg)';
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
 
     function bindDomLongPress(getLatLng) {
       const el = document.getElementById('map');
@@ -244,7 +280,13 @@ function buildMapPage(opts: {
       if (data.type !== 'appnavi:map-cmd' || !mapApi) return;
       const cmd = data.cmd;
       if (cmd === 'setUserLocation') {
-        mapApi.setUserLocation(Number(data.lat), Number(data.lng), !!data.center);
+        const heading = data.heading == null ? null : Number(data.heading);
+        mapApi.setUserLocation(
+          Number(data.lat),
+          Number(data.lng),
+          !!data.center,
+          heading != null && Number.isFinite(heading) ? heading : null
+        );
       } else if (cmd === 'setCenter') {
         mapApi.setCenter(Number(data.lat), Number(data.lng));
       } else if (cmd === 'setFocus') {
@@ -275,12 +317,45 @@ function buildMapPage(opts: {
         icon: L.divIcon({
           className: 'me-icon',
           html: meHtml(),
-          iconSize: [22, 22],
-          iconAnchor: [11, 11]
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
         }),
         zIndexOffset: 1000,
         interactive: false
       }).addTo(map);
+      let animFrame = null;
+      let animFrom = { lat: lat, lng: lng };
+      let animTo = { lat: lat, lng: lng };
+
+      function meEl() {
+        const root = userMarker.getElement();
+        return root ? root.querySelector('.me-wrap') : null;
+      }
+
+      function animateUserTo(plat, plng, centerMap, heading) {
+        if (animFrame) cancelAnimationFrame(animFrame);
+        const cur = userMarker.getLatLng();
+        animFrom = { lat: cur.lat, lng: cur.lng };
+        animTo = { lat: plat, lng: plng };
+        const start = performance.now();
+        const dur = 280;
+        applyHeading(meEl(), heading);
+        function step(now) {
+          const t = Math.min(1, (now - start) / dur);
+          const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+          const nextLat = lerp(animFrom.lat, animTo.lat, ease);
+          const nextLng = lerp(animFrom.lng, animTo.lng, ease);
+          userMarker.setLatLng([nextLat, nextLng]);
+          if (centerMap) {
+            withProgrammatic(function() {
+              map.panTo([nextLat, nextLng], { animate: false });
+            });
+          }
+          if (t < 1) animFrame = requestAnimationFrame(step);
+          else animFrame = null;
+        }
+        animFrame = requestAnimationFrame(step);
+      }
 
       const spotLayer = L.layerGroup().addTo(map);
 
@@ -311,12 +386,9 @@ function buildMapPage(opts: {
       });
 
       mapApi = {
-        setUserLocation: function(plat, plng, center) {
+        setUserLocation: function(plat, plng, center, heading) {
           if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
-          userMarker.setLatLng([plat, plng]);
-          if (center) {
-            withProgrammatic(function() { map.panTo([plat, plng], { animate: true }); });
-          }
+          animateUserTo(plat, plng, !!center, heading);
         },
         setCenter: function(plat, plng) {
           if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
@@ -386,18 +458,46 @@ function buildMapPage(opts: {
 
           let focusMarker = null;
           let spotOverlays = [];
-          const meEl = document.createElement('div');
-          meEl.innerHTML = meHtml();
-          meEl.style.marginLeft = '-11px';
-          meEl.style.marginTop = '-11px';
+          const meHost = document.createElement('div');
+          meHost.innerHTML = meHtml();
+          const meWrap = meHost.firstChild;
+          meHost.style.marginLeft = '-14px';
+          meHost.style.marginTop = '-14px';
           const userOverlay = new kakao.maps.CustomOverlay({
             map: map,
             position: center,
-            content: meEl,
+            content: meHost,
             xAnchor: 0,
             yAnchor: 0,
             zIndex: 10
           });
+          let animFrame = null;
+          let animFrom = { lat: lat, lng: lng };
+          let animTo = { lat: lat, lng: lng };
+
+          function animateUserTo(plat, plng, centerMap, heading) {
+            if (animFrame) cancelAnimationFrame(animFrame);
+            const cur = userOverlay.getPosition();
+            animFrom = { lat: cur.getLat(), lng: cur.getLng() };
+            animTo = { lat: plat, lng: plng };
+            const start = performance.now();
+            const dur = 280;
+            applyHeading(meWrap, heading);
+            function step(now) {
+              const t = Math.min(1, (now - start) / dur);
+              const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+              const nextLat = lerp(animFrom.lat, animTo.lat, ease);
+              const nextLng = lerp(animFrom.lng, animTo.lng, ease);
+              const ll = new kakao.maps.LatLng(nextLat, nextLng);
+              userOverlay.setPosition(ll);
+              if (centerMap) {
+                withProgrammatic(function() { map.setCenter(ll); });
+              }
+              if (t < 1) animFrame = requestAnimationFrame(step);
+              else animFrame = null;
+            }
+            animFrame = requestAnimationFrame(step);
+          }
 
           function renderSpots(list) {
             spotOverlays.forEach(function(o) { o.setMap(null); });
@@ -428,13 +528,9 @@ function buildMapPage(opts: {
           });
 
           mapApi = {
-            setUserLocation: function(plat, plng, centerMap) {
+            setUserLocation: function(plat, plng, centerMap, heading) {
               if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
-              const ll = new kakao.maps.LatLng(plat, plng);
-              userOverlay.setPosition(ll);
-              if (centerMap) {
-                withProgrammatic(function() { map.panTo(ll); });
-              }
+              animateUserTo(plat, plng, !!centerMap, heading);
             },
             setCenter: function(plat, plng) {
               if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;

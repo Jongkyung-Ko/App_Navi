@@ -23,24 +23,33 @@ async function ensureForegroundPermission(): Promise<void> {
   }
 }
 
+function toUserLocation(position: Location.LocationObject): UserLocation {
+  const heading = position.coords.heading;
+  return {
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    heading:
+      heading == null || Number.isNaN(heading) || heading < 0 ? null : heading,
+  };
+}
+
 export async function getCurrentLocation(): Promise<UserLocation> {
   await ensureForegroundPermission();
 
   const position = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.Balanced,
+    accuracy: Location.Accuracy.High,
   });
 
-  return {
-    lat: position.coords.latitude,
-    lng: position.coords.longitude,
-  };
+  return toUserLocation(position);
 }
 
 export interface WatchLocationOptions {
   /** Minimum movement in meters before an update (platform-dependent). */
   distanceInterval?: number;
-  /** Minimum time between updates in ms (platform-dependent). */
+  /** Minimum time between updates in ms (Android; platform-dependent). */
   timeInterval?: number;
+  /** GPS accuracy tier. Use BestForNavigation for nav-style live tracking. */
+  accuracy?: Location.Accuracy;
 }
 
 /** Watch GPS; default ~100m / 30s. Pass tighter intervals for live map following. */
@@ -51,15 +60,25 @@ export async function watchLocationChanges(
   await ensureForegroundPermission();
   return Location.watchPositionAsync(
     {
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: opts?.accuracy ?? Location.Accuracy.Balanced,
       distanceInterval: opts?.distanceInterval ?? 100,
       timeInterval: opts?.timeInterval ?? 30_000,
     },
     (position) => {
-      onChange({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      });
+      onChange(toUserLocation(position));
     },
   );
+}
+
+/**
+ * High-frequency GPS for nav-style map tracking (~1s / 1m, BestForNavigation).
+ */
+export async function watchLiveLocation(
+  onChange: (loc: UserLocation) => void,
+): Promise<Location.LocationSubscription> {
+  return watchLocationChanges(onChange, {
+    accuracy: Location.Accuracy.BestForNavigation,
+    distanceInterval: 1,
+    timeInterval: 1_000,
+  });
 }
