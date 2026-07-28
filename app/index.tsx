@@ -617,6 +617,9 @@ export default function HomeScreen() {
           followUser={followUser && !usingMapFocus}
           focusLat={mapFocus?.lat ?? null}
           focusLng={mapFocus?.lng ?? null}
+          radiusMeters={
+            nearbySettings.scope === 'radius' ? nearbySettings.radiusKm * 1000 : null
+          }
           onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
           onUserInteract={onMapUserInteract}
         />

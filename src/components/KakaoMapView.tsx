@@ -21,6 +21,8 @@ interface KakaoMapViewProps {
   /** Investigated point marker; null clears it. */
   focusLat?: number | null;
   focusLng?: number | null;
+  /** Search radius in meters around my location; null/undefined hides the circle. */
+  radiusMeters?: number | null;
   onLongPressLocation?: (lat: number, lng: number) => void;
   /** Fired when the user pans/zooms the map. */
   onUserInteract?: () => void;
@@ -37,7 +39,8 @@ type MapCmd =
     }
   | { type: 'appnavi:map-cmd'; cmd: 'setCenter'; lat: number; lng: number }
   | { type: 'appnavi:map-cmd'; cmd: 'setFocus'; lat: number | null; lng: number | null }
-  | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] };
+  | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] }
+  | { type: 'appnavi:map-cmd'; cmd: 'setRadiusCircle'; radiusM: number | null };
 
 /**
  * Web map: load embed page from API server (proper origin for Kakao),
@@ -54,6 +57,7 @@ export function KakaoMapView({
   followUser = false,
   focusLat = null,
   focusLng = null,
+  radiusMeters = null,
   onLongPressLocation,
   onUserInteract,
 }: KakaoMapViewProps) {
@@ -67,8 +71,24 @@ export function KakaoMapView({
   const followRef = useRef(followUser);
   followRef.current = followUser;
 
-  const propsRef = useRef({ userLat, userLng, userHeading, focusLat, focusLng, markers });
-  propsRef.current = { userLat, userLng, userHeading, focusLat, focusLng, markers };
+  const propsRef = useRef({
+    userLat,
+    userLng,
+    userHeading,
+    focusLat,
+    focusLng,
+    markers,
+    radiusMeters,
+  });
+  propsRef.current = {
+    userLat,
+    userLng,
+    userHeading,
+    focusLat,
+    focusLng,
+    markers,
+    radiusMeters,
+  };
 
   // Stable initial URL — live updates go through postMessage.
   const initial = useRef({ lat, lng, markers });
@@ -130,6 +150,14 @@ export function KakaoMapView({
         markers: p.markers.slice(0, 20),
       });
     }
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setRadiusCircle',
+      radiusM:
+        p.radiusMeters != null && Number.isFinite(p.radiusMeters) && p.radiusMeters > 0
+          ? p.radiusMeters
+          : null,
+    });
   };
 
   useEffect(() => {
@@ -189,6 +217,17 @@ export function KakaoMapView({
       markers: markers.slice(0, 20),
     });
   }, [markers]);
+
+  useEffect(() => {
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setRadiusCircle',
+      radiusM:
+        radiusMeters != null && Number.isFinite(radiusMeters) && radiusMeters > 0
+          ? radiusMeters
+          : null,
+    });
+  }, [radiusMeters]);
 
   return (
     <View style={[styles.wrap, { height }]}>
