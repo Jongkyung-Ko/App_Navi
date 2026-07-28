@@ -87,14 +87,18 @@ function buildMapPage(opts: {
     .spot-change.down { color: #1f6f4a; }
     .spot-change.flat { color: #5c6670; }
     .heat-label {
-      padding: 2px 7px;
-      border-radius: 8px;
-      background: rgba(255,255,255,.96);
-      color: #1a2332;
-      font: 700 10px/1.2 sans-serif;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      color: rgba(26, 35, 50, 0.72);
+      font: 700 11px/1.2 sans-serif;
       white-space: nowrap;
-      box-shadow: 0 1px 3px rgba(0,0,0,.2);
       pointer-events: none;
+      text-shadow:
+        0 0 2px rgba(255,255,255,0.55),
+        0 1px 2px rgba(255,255,255,0.35);
     }
     .me-wrap {
       width: 28px;
