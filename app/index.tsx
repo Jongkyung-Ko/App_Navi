@@ -43,6 +43,8 @@ import {
 
 const MOVE_THRESHOLD_M = 100;
 const MOVE_POLL_MS = 30_000;
+/** After the user pans the map, return to GPS center if idle this long — unless prices were investigated. */
+const MAP_IDLE_RETURN_MS = 15_000;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -64,6 +66,10 @@ export default function HomeScreen() {
   const [mapAddress, setMapAddress] = useState<ReverseGeocodeResult | null>(null);
   const [investigating, setInvestigating] = useState(false);
   const [showTop3Card, setShowTop3Card] = useState(false);
+  /** Live GPS for the blue map marker (updated more often than address refresh). */
+  const [liveLocation, setLiveLocation] = useState<UserLocation | null>(null);
+  /** Keep map centered on GPS until the user pans (or investigates prices). */
+  const [followUser, setFollowUser] = useState(true);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
@@ -77,6 +83,9 @@ export default function HomeScreen() {
   const areaTargetRef = useRef(areaTarget);
   const mapFocusRef = useRef(mapFocus);
   const mapAddressRef = useRef(mapAddress);
+  const idleReturnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** True after a successful 매매가 investigate — blocks 15s auto-return until locate is pressed. */
+  const priceLockRef = useRef(false);
 
   locationRef.current = location;
   addressRef.current = address;
@@ -84,14 +93,82 @@ export default function HomeScreen() {
   mapFocusRef.current = mapFocus;
   mapAddressRef.current = mapAddress;
 
-  const activeLoc = mapFocus ?? location;
+  const userLoc = liveLocation ?? location;
+  const activeLoc = mapFocus ?? userLoc;
   const activeAddress = mapFocus ? mapAddress : address;
+
+  const clearIdleReturnTimer = useCallback(() => {
+    if (idleReturnTimer.current) {
+      clearTimeout(idleReturnTimer.current);
+      idleReturnTimer.current = null;
+    }
+  }, []);
+
+  const resumeFollowMyLocation = useCallback(() => {
+    clearIdleReturnTimer();
+    priceLockRef.current = false;
+    setMapFocus(null);
+    setMapAddress(null);
+    setFollowUser(true);
+  }, [clearIdleReturnTimer]);
 
   useEffect(() => {
     void fetchKakaoJsKey()
       .then(setJsKey)
       .catch(() => setJsKey(null));
   }, []);
+
+  // Seed / sync live GPS from the one-shot location hook.
+  useEffect(() => {
+    if (location) setLiveLocation(location);
+  }, [location]);
+
+  // Continuous GPS for the blue "my location" marker + follow-centering.
+  useEffect(() => {
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
+    void watchLocationChanges(
+      (loc) => {
+        if (cancelled) return;
+        setLiveLocation(loc);
+      },
+      { distanceInterval: 10, timeInterval: 5_000 },
+    )
+      .then((sub) => {
+        if (cancelled) {
+          sub.remove();
+          return;
+        }
+        subscription = sub;
+      })
+      .catch(() => {
+        // Fall back to one-shot location from useCurrentLocation.
+      });
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, []);
+
+  // 15s idle return after pan — skipped once 매매가 was investigated (price lock).
+  const onMapUserInteract = useCallback(() => {
+    if (priceLockRef.current || mapFocusRef.current) {
+      setFollowUser(false);
+      clearIdleReturnTimer();
+      return;
+    }
+    setFollowUser(false);
+    clearIdleReturnTimer();
+    idleReturnTimer.current = setTimeout(() => {
+      idleReturnTimer.current = null;
+      if (priceLockRef.current || mapFocusRef.current) return;
+      setFollowUser(true);
+    }, MAP_IDLE_RETURN_MS);
+  }, [clearIdleReturnTimer]);
+
+  useEffect(() => {
+    return () => clearIdleReturnTimer();
+  }, [clearIdleReturnTimer]);
 
   const loadComplexes = useCallback(
     async (opts?: {
@@ -161,9 +238,9 @@ export default function HomeScreen() {
     setInvestigating(true);
     setListError(null);
     try {
-      setMapFocus(null);
-      setMapAddress(null);
+      resumeFollowMyLocation();
       const loc = await getCurrentLocation();
+      setLiveLocation(loc);
       const geo = await reverseGeocode(loc.lat, loc.lng);
       const cached = getNearbyCache(geo.lawdCd, areaTargetRef.current);
       skipAutoLoad.current = true;
@@ -193,7 +270,7 @@ export default function HomeScreen() {
     } finally {
       setInvestigating(false);
     }
-  }, [loadComplexes, refresh]);
+  }, [loadComplexes, refresh, resumeFollowMyLocation]);
 
   const investigateAt = useCallback(
     async (plat: number, plng: number) => {
@@ -205,6 +282,9 @@ export default function HomeScreen() {
         const geo = await reverseGeocode(plat, plng);
         pendingSpeakTop3.current = true;
         setShowTop3Card(true);
+        clearIdleReturnTimer();
+        priceLockRef.current = true;
+        setFollowUser(false);
         setMapFocus({ lat: plat, lng: plng });
         setMapAddress(geo);
       } catch (err) {
@@ -214,7 +294,7 @@ export default function HomeScreen() {
         setInvestigating(false);
       }
     },
-    [],
+    [clearIdleReturnTimer],
   );
 
   const onRefresh = useCallback(async () => {
@@ -340,8 +420,9 @@ export default function HomeScreen() {
       });
       // Also sync main location UI when we moved meaningfully.
       if (movedM >= MOVE_THRESHOLD_M) {
-        setMapFocus(null);
-        setMapAddress(null);
+        // Move-watch refresh recenters on GPS; clears investigate lock.
+        resumeFollowMyLocation();
+        setLiveLocation(loc);
         await refresh();
       }
     } catch (err) {
@@ -356,7 +437,7 @@ export default function HomeScreen() {
     } finally {
       moveBusy.current = false;
     }
-  }, [loadComplexes, refresh]);
+  }, [loadComplexes, refresh, resumeFollowMyLocation]);
 
   useEffect(() => {
     if (!moveWatchOn) {
@@ -436,8 +517,16 @@ export default function HomeScreen() {
   const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 20), [complexes]);
   const rankedList = useMemo(() => sortBySalePriceDesc(complexes).slice(0, 8), [complexes]);
 
-  const lat = activeLoc?.lat ?? activeAddress?.lat ?? 37.5665;
-  const lng = activeLoc?.lng ?? activeAddress?.lng ?? 126.978;
+  const lat =
+    (followUser ? userLoc?.lat : null) ??
+    activeLoc?.lat ??
+    activeAddress?.lat ??
+    37.5665;
+  const lng =
+    (followUser ? userLoc?.lng : null) ??
+    activeLoc?.lng ??
+    activeAddress?.lng ??
+    126.978;
   const usingMapFocus = mapFocus !== null;
 
   const moveHint = moveWatchOn
@@ -476,7 +565,13 @@ export default function HomeScreen() {
           jsKey={jsKey}
           markers={mapMarkers}
           height={360}
+          userLat={userLoc?.lat ?? null}
+          userLng={userLoc?.lng ?? null}
+          followUser={followUser && !usingMapFocus}
+          focusLat={mapFocus?.lat ?? null}
+          focusLng={mapFocus?.lng ?? null}
           onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
+          onUserInteract={onMapUserInteract}
         />
         <View style={styles.mapAreaChips} pointerEvents="box-none">
           <AreaBandChips
@@ -488,7 +583,11 @@ export default function HomeScreen() {
         </View>
         <Pressable
           accessibilityLabel="현재 위치로 이동"
-          style={[styles.locateBtn, investigating && styles.locateBtnDisabled]}
+          style={[
+            styles.locateBtn,
+            !followUser && styles.locateBtnActive,
+            investigating && styles.locateBtnDisabled,
+          ]}
           disabled={investigating}
           onPress={() => void goToMyLocation()}
         >
@@ -650,6 +749,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(26, 35, 50, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  locateBtnActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.95)',
   },
   locateBtnDisabled: {
     opacity: 0.5,

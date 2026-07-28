@@ -36,16 +36,24 @@ export async function getCurrentLocation(): Promise<UserLocation> {
   };
 }
 
-/** Watch GPS; fires when moved ~100m or about every 30s (platform-dependent). */
+export interface WatchLocationOptions {
+  /** Minimum movement in meters before an update (platform-dependent). */
+  distanceInterval?: number;
+  /** Minimum time between updates in ms (platform-dependent). */
+  timeInterval?: number;
+}
+
+/** Watch GPS; default ~100m / 30s. Pass tighter intervals for live map following. */
 export async function watchLocationChanges(
   onChange: (loc: UserLocation) => void,
+  opts?: WatchLocationOptions,
 ): Promise<Location.LocationSubscription> {
   await ensureForegroundPermission();
   return Location.watchPositionAsync(
     {
       accuracy: Location.Accuracy.Balanced,
-      distanceInterval: 100,
-      timeInterval: 30_000,
+      distanceInterval: opts?.distanceInterval ?? 100,
+      timeInterval: opts?.timeInterval ?? 30_000,
     },
     (position) => {
       onChange({
