@@ -108,29 +108,42 @@ def load_sgg_map(path: Path) -> dict[str, str]:
     return out
 
 
-def resolve_lawd(sgg_field: str, sgg_map: dict[str, str]) -> str | None:
-    s = (sgg_field or "").strip()
-    if not s:
+def longest_sgg_prefix(sgg_field: str, sgg_map: dict[str, str]) -> str | None:
+    """Match '충청북도 청주시 상당구 …' as well as '서울특별시 광진구 …'."""
+    parts = (sgg_field or "").strip().split()
+    if not parts:
         return None
-    # CSV: "서울특별시 광진구 광장동"
-    parts = s.split()
-    if len(parts) >= 2:
-        key2 = f"{parts[0]} {parts[1]}"
-        if key2 in sgg_map:
-            return sgg_map[key2]
-        if parts[1] in sgg_map:
-            return sgg_map[parts[1]]
-    # 세종 등
-    if parts and parts[0] in sgg_map:
-        return sgg_map[parts[0]]
+    # Prefer longer keys first (sido + multi-token 시군구).
+    for n in range(min(3, len(parts)), 0, -1):
+        key = " ".join(parts[:n])
+        if key in sgg_map:
+            return key
+    if len(parts) >= 3:
+        key = f"{parts[1]} {parts[2]}"
+        if key in sgg_map:
+            return key
+    if len(parts) >= 2 and parts[1] in sgg_map:
+        return parts[1]
+    if parts[0] in sgg_map:
+        return parts[0]
     return None
 
 
-def extract_dong(sgg_field: str) -> str:
-    parts = (sgg_field or "").split()
+def resolve_lawd(sgg_field: str, sgg_map: dict[str, str]) -> str | None:
+    key = longest_sgg_prefix(sgg_field, sgg_map)
+    return sgg_map[key] if key else None
+
+
+def extract_dong(sgg_field: str, sgg_map: dict[str, str]) -> str:
+    s = (sgg_field or "").strip()
+    key = longest_sgg_prefix(s, sgg_map)
+    if key and s.startswith(key):
+        rest = s[len(key) :].strip()
+        return rest or s
+    parts = s.split()
     if len(parts) >= 3:
         return " ".join(parts[2:])
-    return sgg_field
+    return s
 
 
 def pick_col(fieldnames: list[str], candidates: list[str]) -> str | None:
@@ -141,6 +154,7 @@ def pick_col(fieldnames: list[str], candidates: list[str]) -> str | None:
 
 
 def parse_file(path: Path, sgg_map: dict[str, str]) -> tuple[list[TradeRow], dict]:
+    path = path.resolve()
     raw = path.read_bytes()
     text = raw.decode("cp949")
     lines = text.splitlines()
@@ -162,8 +176,13 @@ def parse_file(path: Path, sgg_map: dict[str, str]) -> tuple[list[TradeRow], dic
     elif "거래금액(만원)" not in fields:
         missing.append("거래금액(만원)")
 
+    try:
+        file_label = str(path.relative_to(ROOT))
+    except ValueError:
+        file_label = str(path)
+
     report = {
-        "file": str(path.relative_to(ROOT)),
+        "file": file_label,
         "kind": kind,
         "headerIndex": header_i,
         "fieldnames": fields,
@@ -239,7 +258,7 @@ def parse_file(path: Path, sgg_map: dict[str, str]) -> tuple[list[TradeRow], dic
             trade = TradeRow(
                 lawdCd=lawd,
                 aptName=(row.get("단지명") or "").strip(),
-                dong=extract_dong(sgg_field),
+                dong=extract_dong(sgg_field, sgg_map),
                 jibun=(row.get(jibun_col) or "").strip() or None if jibun_col else None,
                 exclusiveArea=area,
                 price=price,
@@ -293,15 +312,20 @@ def write_normalized(rows: list[TradeRow], out_dir: Path) -> dict[str, int]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", action="append", default=[], help="CSV path(s); default=all in downloads/")
-    ap.add_argument("--sgg-map", default=str(ROOT / "data/molit-raw/manifests/sgg-seoul.json"))
+    ap.add_argument("--sgg-map", action="append", default=[], help="sgg map JSON (repeatable)")
+    ap.add_argument("--only-lawd", default="", help="comma-separated lawdCd allowlist (e.g. Cheongju districts)")
     ap.add_argument("--write", action="store_true", help="write normalized JSONL buckets")
     args = ap.parse_args()
 
-    sgg_path = Path(args.sgg_map)
-    if not sgg_path.exists():
-        raise SystemExit(f"sgg map missing: {sgg_path} (run download --list / fetch sgg first)")
+    map_paths = [Path(p) for p in args.sgg_map] or [ROOT / "data/molit-raw/manifests/sgg-seoul.json"]
+    sgg_map: dict[str, str] = {}
+    for sgg_path in map_paths:
+        if not sgg_path.exists():
+            raise SystemExit(f"sgg map missing: {sgg_path}")
+        sgg_map.update(load_sgg_map(sgg_path))
 
-    sgg_map = load_sgg_map(sgg_path)
+    allow = {x.strip() for x in args.only_lawd.split(",") if x.strip()}
+
     files = [Path(p) for p in args.input] if args.input else sorted(RAW_DIR.glob("*.csv"))
     if not files:
         raise SystemExit("no CSV files found")
@@ -313,6 +337,11 @@ def main() -> int:
     reports = []
     for f in files:
         rows, report = parse_file(f, sgg_map)
+        if allow:
+            before = len(rows)
+            rows = [r for r in rows if r.lawdCd in allow]
+            report["onlyLawdFilteredOut"] = before - len(rows)
+            report["rowsOut"] = len(rows)
         reports.append(report)
         all_rows.extend(rows)
         print(

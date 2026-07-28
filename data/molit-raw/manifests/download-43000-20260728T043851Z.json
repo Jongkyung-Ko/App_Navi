@@ -1,0 +1,141 @@
+{
+  "createdAt": "20260728T043851Z",
+  "source": "https://rt.molit.go.kr/pt/xls/xls.do",
+  "sido": {
+    "code": "43000",
+    "name": "충청북도"
+  },
+  "years": 3,
+  "results": [
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "sale",
+        "from_dt": "2023-01-01",
+        "to_dt": "2023-12-31",
+        "out_name": "43000_sale_2023.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_sale_2023.csv",
+      "ok": true,
+      "bytes": 3410247,
+      "downloadedAt": "2026-07-28T04:32:34.994421+00:00",
+      "skipped": false,
+      "error": null
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "jeonse",
+        "from_dt": "2023-01-01",
+        "to_dt": "2023-12-31",
+        "out_name": "43000_jeonse_2023.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_jeonse_2023.csv",
+      "ok": true,
+      "bytes": 6317860,
+      "downloadedAt": "2026-07-28T04:33:20.452540+00:00",
+      "skipped": false,
+      "error": null
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "sale",
+        "from_dt": "2024-01-01",
+        "to_dt": "2024-12-31",
+        "out_name": "43000_sale_2024.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_sale_2024.csv",
+      "ok": true,
+      "bytes": 3714040,
+      "downloadedAt": "2026-07-28T04:35:53.606265+00:00",
+      "skipped": false,
+      "error": null
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "jeonse",
+        "from_dt": "2024-01-01",
+        "to_dt": "2024-12-31",
+        "out_name": "43000_jeonse_2024.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_jeonse_2024.csv",
+      "ok": true,
+      "bytes": 6135119,
+      "downloadedAt": "2026-07-28T04:36:15.006029+00:00",
+      "skipped": false,
+      "error": null
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "sale",
+        "from_dt": "2025-01-01",
+        "to_dt": "2025-12-31",
+        "out_name": "43000_sale_2025.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_sale_2025.csv",
+      "ok": false,
+      "bytes": 4134788,
+      "downloadedAt": null,
+      "skipped": false,
+      "error": "undecodable"
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "jeonse",
+        "from_dt": "2025-01-01",
+        "to_dt": "2025-12-31",
+        "out_name": "43000_jeonse_2025.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_jeonse_2025.csv",
+      "ok": true,
+      "bytes": 6068845,
+      "downloadedAt": "2026-07-28T04:36:59.626441+00:00",
+      "skipped": false,
+      "error": null
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "sale",
+        "from_dt": "2026-01-01",
+        "to_dt": "2026-07-28",
+        "out_name": "43000_sale_2026.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_sale_2026.csv",
+      "ok": false,
+      "bytes": 2276148,
+      "downloadedAt": null,
+      "skipped": false,
+      "error": "undecodable"
+    },
+    {
+      "job": {
+        "sido_cd": "43000",
+        "sido_nm": "충청북도",
+        "kind": "jeonse",
+        "from_dt": "2026-01-01",
+        "to_dt": "2026-07-28",
+        "out_name": "43000_jeonse_2026.csv"
+      },
+      "path": "data/molit-raw/downloads/43000_jeonse_2026.csv",
+      "ok": true,
+      "bytes": 2775764,
+      "downloadedAt": "2026-07-28T04:38:48.000814+00:00",
+      "skipped": false,
+      "error": null
+    }
+  ],
+  "okCount": 6,
+  "failCount": 2
+}
