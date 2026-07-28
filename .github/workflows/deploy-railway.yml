@@ -1,6 +1,11 @@
-# Redeploy on push when GitHub Secrets are configured:
-#   RAILWAY_TOKEN       — Railway account/project token
-#   RAILWAY_SERVICE_ID  — optional service id for `railway up --service`
+# Redeploy on push when GitHub Secrets are configured.
+#
+# Preferred (project token):
+#   RAILWAY_TOKEN — create in Railway Project → Settings → Tokens
+#   (NOT Account Settings → Tokens)
+#
+# Optional:
+#   RAILWAY_SERVICE_ID — service id if the project has multiple services
 name: Deploy Railway
 
 on:
@@ -27,7 +32,8 @@ jobs:
 
       - name: Install Railway CLI
         if: steps.check.outputs.skip == 'false'
-        run: npm install -g @railway/cli
+        # Pin: newer CLI versions have broken project-token auth in CI.
+        run: npm install -g @railway/cli@5.2.0
 
       - name: Deploy
         if: steps.check.outputs.skip == 'false'
@@ -35,7 +41,8 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
         run: |
-          if [ -n "$RAILWAY_SERVICE_ID" ]; then
+          set -euo pipefail
+          if [ -n "${RAILWAY_SERVICE_ID:-}" ]; then
             railway up --ci --service "$RAILWAY_SERVICE_ID"
           else
             railway up --ci
