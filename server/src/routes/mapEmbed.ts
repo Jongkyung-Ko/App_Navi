@@ -435,14 +435,15 @@ function buildMapPage(opts: {
           if (!Number.isFinite(h.lat) || !Number.isFinite(h.lng)) return;
           const intensity = Number(h.intensity);
           const t = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0.5;
-          const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 180;
+          const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 400;
           const color = h.fillColor || '#ea580c';
           L.circle([h.lat, h.lng], {
             radius: radius,
             color: color,
             weight: 0,
             fillColor: color,
-            fillOpacity: 0.2 + t * 0.22,
+            // Lower transparency (higher opacity) so heat beats base map contrast.
+            fillOpacity: 0.42 + t * 0.28,
             interactive: false
           }).addTo(heatLayer);
         });
@@ -645,7 +646,7 @@ function buildMapPage(opts: {
               if (!Number.isFinite(h.lat) || !Number.isFinite(h.lng)) return;
               const intensity = Number(h.intensity);
               const t = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0.5;
-              const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 180;
+              const radius = Number(h.radiusM) > 0 ? Number(h.radiusM) : 400;
               const color = h.fillColor || '#ea580c';
               const circle = new kakao.maps.Circle({
                 center: new kakao.maps.LatLng(h.lat, h.lng),
@@ -653,7 +654,8 @@ function buildMapPage(opts: {
                 strokeWeight: 0,
                 strokeOpacity: 0,
                 fillColor: color,
-                fillOpacity: 0.2 + t * 0.22,
+                // Lower transparency (higher opacity) so heat beats base map contrast.
+                fillOpacity: 0.42 + t * 0.28,
                 zIndex: 1
               });
               circle.setMap(map);
