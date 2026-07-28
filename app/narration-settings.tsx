@@ -3,7 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNarrationSettings } from '../src/hooks/useNarrationSettings';
-import { narrationMetricLabel } from '../src/services/narrationSettings';
+import {
+  narrationMetricLabel,
+  narrationMetricsLabel,
+  normalizeMetrics,
+} from '../src/services/narrationSettings';
 import {
   NARRATION_METRIC_OPTIONS,
   NARRATION_TOP_COUNT_OPTIONS,
@@ -15,13 +19,24 @@ export default function NarrationSettingsScreen() {
   const insets = useSafeAreaInsets();
   const { settings, ready, update } = useNarrationSettings();
 
-  const setMetric = (metric: NarrationMetric) => {
-    void update({ metric });
+  const toggleMetric = (metric: NarrationMetric) => {
+    const current = normalizeMetrics(settings.metrics);
+    const on = current.includes(metric);
+    if (on) {
+      if (current.length <= 1) return;
+      void update({ metrics: current.filter((m) => m !== metric) });
+      return;
+    }
+    void update({
+      metrics: normalizeMetrics([...current, metric]),
+    });
   };
 
   const setTopCount = (topCount: NarrationTopCount) => {
     void update({ topCount });
   };
+
+  const selectedLabel = narrationMetricsLabel(settings.metrics);
 
   return (
     <ScrollView
@@ -32,19 +47,20 @@ export default function NarrationSettingsScreen() {
 
       <Text style={styles.sectionTitle}>읽어줄 항목</Text>
       <Text style={styles.sectionSub}>
-        매매가 순위 단지 목록을 기준으로, 선택한 항목만 소리로 안내합니다.
+        매매가 순위 단지 목록을 기준으로, 선택한 항목을 소리로 안내합니다. 2개 이상 복수 선택할 수
+        있습니다.
       </Text>
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>안내 항목</Text>
-        <Text style={styles.cardValue}>{narrationMetricLabel(settings.metric)}</Text>
+        <Text style={styles.cardValue}>{selectedLabel}</Text>
         <View style={styles.row}>
           {NARRATION_METRIC_OPTIONS.map((metric) => {
-            const on = settings.metric === metric;
+            const on = settings.metrics.includes(metric);
             return (
               <Pressable
                 key={metric}
-                onPress={() => setMetric(metric)}
+                onPress={() => toggleMetric(metric)}
                 style={[styles.chip, on && styles.chipOn]}
                 disabled={!ready}
               >
@@ -55,6 +71,7 @@ export default function NarrationSettingsScreen() {
             );
           })}
         </View>
+        <Text style={styles.cardHint}>항목을 눌러 켜고 끌 수 있습니다. 최소 1개는 선택해야 합니다.</Text>
       </View>
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]}>읽어줄 순위</Text>
@@ -81,8 +98,7 @@ export default function NarrationSettingsScreen() {
           })}
         </View>
         <Text style={styles.cardHint}>
-          예: Top 2를 고르면 매매가 1위·2위 단지의 {narrationMetricLabel(settings.metric)}만
-          읽습니다.
+          예: Top 2를 고르면 매매가 1위·2위 단지의 {selectedLabel}를 읽습니다.
         </Text>
       </View>
     </ScrollView>

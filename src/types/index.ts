@@ -162,7 +162,8 @@ export const NARRATION_TOP_COUNT_OPTIONS = [1, 2, 3, 4, 5] as const;
 export type NarrationTopCount = (typeof NARRATION_TOP_COUNT_OPTIONS)[number];
 
 export interface NarrationSettings {
-  metric: NarrationMetric;
+  /** Metrics spoken for each ranked complex (one or more). */
+  metrics: NarrationMetric[];
   /** How many sale-price-ranked complexes to narrate (1–5). */
   topCount: NarrationTopCount;
 }

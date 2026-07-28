@@ -10,7 +10,7 @@ import {
 const STORAGE_KEY = 'appnavi.narrationSettings.v1';
 
 export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
-  metric: 'sale',
+  metrics: ['sale'],
   topCount: 3,
 };
 
@@ -23,11 +23,19 @@ const METRIC_LABELS: Record<NarrationMetric, string> = {
   gapPerPyeong: '평당 갭',
 };
 
-function normalizeMetric(value: unknown): NarrationMetric {
-  if (typeof value === 'string' && (NARRATION_METRIC_OPTIONS as readonly string[]).includes(value)) {
-    return value as NarrationMetric;
+function isMetric(value: unknown): value is NarrationMetric {
+  return typeof value === 'string' && (NARRATION_METRIC_OPTIONS as readonly string[]).includes(value);
+}
+
+/** Keep canonical option order and drop duplicates / invalids. */
+export function normalizeMetrics(value: unknown, fallbackMetric?: unknown): NarrationMetric[] {
+  const fromArray = Array.isArray(value) ? value.filter(isMetric) : [];
+  const selected = new Set<NarrationMetric>(fromArray);
+  if (selected.size === 0 && isMetric(fallbackMetric)) {
+    selected.add(fallbackMetric);
   }
-  return DEFAULT_NARRATION_SETTINGS.metric;
+  const ordered = NARRATION_METRIC_OPTIONS.filter((m) => selected.has(m));
+  return ordered.length > 0 ? ordered : [...DEFAULT_NARRATION_SETTINGS.metrics];
 }
 
 function normalizeTopCount(value: unknown): NarrationTopCount {
@@ -39,10 +47,10 @@ function normalizeTopCount(value: unknown): NarrationTopCount {
 }
 
 function normalizeSettings(raw: unknown): NarrationSettings {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_NARRATION_SETTINGS };
-  const obj = raw as Partial<NarrationSettings>;
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_NARRATION_SETTINGS, metrics: [...DEFAULT_NARRATION_SETTINGS.metrics] };
+  const obj = raw as Partial<NarrationSettings> & { metric?: unknown };
   return {
-    metric: normalizeMetric(obj.metric),
+    metrics: normalizeMetrics(obj.metrics, obj.metric),
     topCount: normalizeTopCount(obj.topCount),
   };
 }
@@ -50,10 +58,10 @@ function normalizeSettings(raw: unknown): NarrationSettings {
 export async function loadNarrationSettings(): Promise<NarrationSettings> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_NARRATION_SETTINGS };
+    if (!raw) return { ...DEFAULT_NARRATION_SETTINGS, metrics: [...DEFAULT_NARRATION_SETTINGS.metrics] };
     return normalizeSettings(JSON.parse(raw) as unknown);
   } catch {
-    return { ...DEFAULT_NARRATION_SETTINGS };
+    return { ...DEFAULT_NARRATION_SETTINGS, metrics: [...DEFAULT_NARRATION_SETTINGS.metrics] };
   }
 }
 
@@ -69,6 +77,11 @@ export function narrationMetricLabel(metric: NarrationMetric): string {
   return METRIC_LABELS[metric];
 }
 
+export function narrationMetricsLabel(metrics: NarrationMetric[]): string {
+  const list = normalizeMetrics(metrics);
+  return list.map(narrationMetricLabel).join('·');
+}
+
 export function narrationSettingsHint(settings: NarrationSettings): string {
-  return `${narrationMetricLabel(settings.metric)} · Top ${settings.topCount}`;
+  return `${narrationMetricsLabel(settings.metrics)} · Top ${settings.topCount}`;
 }
