@@ -180,7 +180,9 @@ export default function HomeScreen() {
   }, []);
 
   // 15s idle return after pan — skipped once 매매가 was investigated (price lock).
+  // Also turn off 이동시 인식: user is browsing the map, not following GPS moves.
   const onMapUserInteract = useCallback(() => {
+    setMoveWatchOn(false);
     if (priceLockRef.current || mapFocusRef.current) {
       setFollowUser(false);
       clearIdleReturnTimer();
