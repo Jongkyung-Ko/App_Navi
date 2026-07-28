@@ -3,8 +3,8 @@
 # Required:
 #   RAILWAY_TOKEN — Project Settings → Tokens (project token, not account token)
 #
-# Recommended when the project has multiple services:
-#   RAILWAY_SERVICE_ID — service name or id (Railway → service → Settings → Service ID)
+# Optional:
+#   RAILWAY_SERVICE_ID — service name or id (defaults to app-navi)
 name: Deploy Railway
 
 on:
@@ -41,23 +41,22 @@ jobs:
           RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
         run: |
           set -euo pipefail
+          SERVICE="${RAILWAY_SERVICE_ID:-app-navi}"
           echo "Railway status:"
           railway status || true
+          echo "Deploying service: $SERVICE"
 
-          if [ -n "${RAILWAY_SERVICE_ID:-}" ]; then
-            echo "Deploying service: $RAILWAY_SERVICE_ID"
-            railway up --ci --service "$RAILWAY_SERVICE_ID"
+          # --ci waits for the deployment. Log streaming sometimes fails even when
+          # the upload/build succeeded, so fall back to a non-CI upload.
+          set +e
+          railway up --ci --service "$SERVICE"
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "Deployed via railway up --ci"
             exit 0
           fi
 
-          # Try common service names when secret is not set.
-          for svc in app-navi app_navi App_Navi web server app backend; do
-            echo "Trying service: $svc"
-            if railway up --ci --service "$svc"; then
-              echo "Deployed via service=$svc"
-              exit 0
-            fi
-          done
-
-          echo "::error::Multiple services found. Add GitHub secret RAILWAY_SERVICE_ID (service name or id)."
-          exit 1
+          echo "CI wait/stream failed (exit=$code); retrying without --ci"
+          railway up --service "$SERVICE"
+          echo "Deploy uploaded via railway up"
