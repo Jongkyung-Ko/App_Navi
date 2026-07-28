@@ -18,6 +18,7 @@ export default function RootLayout() {
         <Stack.Screen name="complexes" options={{ title: '주변 단지 시세' }} />
         <Stack.Screen name="complex/[id]" options={{ title: '단지 상세' }} />
         <Stack.Screen name="settings" options={{ title: '설정' }} />
+        <Stack.Screen name="narration-settings" options={{ title: '나레이션 설정' }} />
       </Stack>
     </SafeAreaProvider>
   );
