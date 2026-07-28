@@ -1,6 +1,6 @@
 /* App Navi minimal service worker — required for installability. */
-const CACHE = 'app-navi-v1';
-const PRECACHE = ['/', '/manifest.webmanifest', '/favicon.png', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE = 'app-navi-v2';
+const PRECACHE = ['/manifest.webmanifest', '/favicon.png', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -31,6 +31,21 @@ self.addEventListener('fetch', (event) => {
     url.pathname === '/health' ||
     url.pathname.startsWith('/map-embed')
   ) {
+    return;
+  }
+
+  // Always prefer network for navigations/HTML so deploys show up immediately.
+  const isNavigate = req.mode === 'navigate' || url.pathname === '/' || req.headers.get('accept')?.includes('text/html');
+  if (isNavigate) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          void caches.open(CACHE).then((cache) => cache.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req).then((hit) => hit || caches.match('/'))),
+    );
     return;
   }
 

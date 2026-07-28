@@ -1,0 +1,42 @@
+# Redeploy on push when GitHub Secrets are configured:
+#   RAILWAY_TOKEN       — Railway account/project token
+#   RAILWAY_SERVICE_ID  — optional service id for `railway up --service`
+name: Deploy Railway
+
+on:
+  push:
+    branches: [master, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Railway token
+        id: check
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "RAILWAY_TOKEN secret missing — relying on Railway GitHub autodeploy."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Railway CLI
+        if: steps.check.outputs.skip == 'false'
+        run: npm install -g @railway/cli
+
+      - name: Deploy
+        if: steps.check.outputs.skip == 'false'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          if [ -n "$RAILWAY_SERVICE_ID" ]; then
+            railway up --ci --service "$RAILWAY_SERVICE_ID"
+          else
+            railway up --ci
+          fi

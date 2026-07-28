@@ -58,6 +58,8 @@ curl "http://localhost:3001/api/trades?lawdCd=11140&months=1"
 
 카카오맵 JS를 쓰려면 디벨로퍼스 Web 도메인에 `app-navi-production.up.railway.app` 를 등록하세요. (미등록 시 OSM 폴백)
 
+`master` / `main` 푸시 시 Railway가 자동 배포되도록 연결해 두세요. GitHub Actions 보조 배포는 Secrets에 `RAILWAY_TOKEN`(선택: `RAILWAY_SERVICE_ID`)이 있을 때 동작합니다.
+
 ## 실행
 
 터미널 1 — 프록시:
