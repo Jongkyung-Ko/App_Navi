@@ -3,6 +3,7 @@ import type { ApartmentTrade } from '../types.js';
 import { mapPool } from '../types.js';
 import { cacheGet, cacheSet } from './cache.js';
 import { diskCacheGet, diskCacheSet, molitMonthTtlSeconds } from './diskCache.js';
+import { readStoreMonth } from './tradeStore.js';
 
 function readCachedMonth(cacheKey: string): ApartmentTrade[] | undefined {
   const mem = cacheGet<ApartmentTrade[]>(cacheKey);
@@ -210,6 +211,13 @@ export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Prom
   const cached = readCachedMonth(cacheKey);
   if (cached) return cached;
 
+  // File backfill (Seoul etc.): serve instantly without MOLIT API.
+  const fromStore = readStoreMonth(lawdCd, 'sale', dealYmd);
+  if (fromStore) {
+    writeCachedMonth(cacheKey, dealYmd, fromStore);
+    return fromStore;
+  }
+
   const allowMock = process.env.ALLOW_MOCK_FALLBACK !== 'false';
   const serviceKey = process.env.MOLIT_SERVICE_KEY;
 
@@ -241,6 +249,12 @@ export async function fetchJeonseForMonth(lawdCd: string, dealYmd: string): Prom
   const cacheKey = `molit:jeonse:${lawdCd}:${dealYmd}`;
   const cached = readCachedMonth(cacheKey);
   if (cached) return cached;
+
+  const fromStore = readStoreMonth(lawdCd, 'jeonse', dealYmd);
+  if (fromStore) {
+    writeCachedMonth(cacheKey, dealYmd, fromStore);
+    return fromStore;
+  }
 
   const allowMock = process.env.ALLOW_MOCK_FALLBACK !== 'false';
   const serviceKey = process.env.MOLIT_SERVICE_KEY;

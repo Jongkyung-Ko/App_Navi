@@ -23,7 +23,13 @@ COPY --from=build /app/server/node_modules ./node_modules
 COPY --from=build /app/server/src ./src
 COPY --from=build /app/server/tsconfig.json ./tsconfig.json
 COPY --from=build /app/server/public ./public
-RUN mkdir -p /app/server/.cache
+# Seoul 3y+ backfill (packed ~14MB); extracted for store-first /api/trades
+COPY data/molit-store/seoul-normalized.tgz /tmp/seoul-normalized.tgz
+RUN mkdir -p /app/server/data/molit-store \
+  && tar -xzf /tmp/seoul-normalized.tgz -C /app/server/data/molit-store \
+  && rm /tmp/seoul-normalized.tgz \
+  && mkdir -p /app/server/.cache
+ENV MOLIT_STORE_DIR=/app/server/data/molit-store/normalized
 
 EXPOSE 3001
 CMD ["npx", "tsx", "src/index.ts"]

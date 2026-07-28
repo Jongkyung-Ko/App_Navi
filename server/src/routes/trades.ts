@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { fetchSaleAndJeonseForMonths } from '../services/molit.js';
 import { searchPlaceKeyword } from '../services/kakao.js';
 import { scheduleLawdPrewarm } from '../services/prewarm.js';
+import { hasStoreMonth } from '../services/tradeStore.js';
 import {
   aggregateComplexes,
   extractAreaBands,
@@ -91,6 +92,9 @@ tradesRouter.get('/', async (req, res) => {
         .filter((c): c is ComplexSummary & { distanceM: number } => c != null);
     }
 
+    const storeSaleMonths = monthKeys.filter((m) => hasStoreMonth(lawdCd, 'sale', m)).length;
+    const storeJeonseMonths = monthKeys.filter((m) => hasStoreMonth(lawdCd, 'jeonse', m)).length;
+
     res.json({
       lawdCd,
       months: monthKeys,
@@ -101,6 +105,8 @@ tradesRouter.get('/', async (req, res) => {
       areaBands,
       selectedAreaTarget: areaTarget ?? null,
       radiusKm: radiusKm ?? null,
+      storeSaleMonths,
+      storeJeonseMonths,
       mock: process.env.MOLIT_SERVICE_KEY?.startsWith('your_') === true,
     });
 

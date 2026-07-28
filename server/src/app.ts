@@ -8,11 +8,13 @@ import { geocodeRouter } from './routes/geocode.js';
 import { tradesRouter } from './routes/trades.js';
 import { mapEmbedHandler } from './routes/mapEmbed.js';
 import { getDiskCacheRoot } from './services/diskCache.js';
+import { ensureTradeStoreReady, getTradeStoreInfo } from './services/tradeStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createApp() {
   const app = express();
+  ensureTradeStoreReady();
 
   app.use(cors());
   app.use(express.json());
@@ -24,6 +26,7 @@ export function createApp() {
     const molitReady = Boolean(
       process.env.MOLIT_SERVICE_KEY && !process.env.MOLIT_SERVICE_KEY.startsWith('your_'),
     );
+    const tradeStore = getTradeStoreInfo();
     res.json({
       ok: true,
       service: 'app-navi-server',
@@ -32,6 +35,9 @@ export function createApp() {
       mockFallback: process.env.ALLOW_MOCK_FALLBACK !== 'false',
       cacheTtlSeconds: Number(process.env.CACHE_TTL_SECONDS ?? 21600),
       diskCacheDir: getDiskCacheRoot(),
+      tradeStoreReady: tradeStore.ready,
+      tradeStoreDir: tradeStore.dir,
+      tradeStoreLawdCount: tradeStore.lawdCount,
     });
   });
 
