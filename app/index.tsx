@@ -21,7 +21,9 @@ import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall
 import { SearchScopeChips } from '../src/components/SearchScopeChips';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
 import { useNearbySettings } from '../src/hooks/useNearbySettings';
+import { useNarrationSettings } from '../src/hooks/useNarrationSettings';
 import { usePwaInstall } from '../src/hooks/usePwaInstall';
+import { narrationSettingsHint } from '../src/services/narrationSettings';
 import { fetchKakaoJsKey, fetchNearbyComplexes, reverseGeocode } from '../src/services/api';
 import { getNearbyCache, setNearbyCache } from '../src/services/nearbyCache';
 import { formatRadiusLabel, scopeLabel } from '../src/services/nearbySettings';
@@ -61,6 +63,7 @@ export default function HomeScreen() {
   const { location, address, loading, error, refresh } = useCurrentLocation();
   const { settings: nearbySettings, ready: nearbySettingsReady, update: updateNearbySettings } =
     useNearbySettings();
+  const { settings: narrationSettings, ready: narrationSettingsReady } = useNarrationSettings();
   const pwa = usePwaInstall();
   const [jsKey, setJsKey] = useState<string | null>(null);
   const [complexes, setComplexes] = useState<ComplexSummary[]>([]);
@@ -340,8 +343,9 @@ export default function HomeScreen() {
       buildNearbyNarration(
         complexes,
         areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : undefined,
+        narrationSettings,
       ),
-    [complexes, areaTarget],
+    [complexes, areaTarget, narrationSettings],
   );
 
   const speakScript = useCallback((script: string) => {
@@ -358,7 +362,7 @@ export default function HomeScreen() {
       const fingerprint = narration.script;
       if (!force && narrationFingerprint.current === fingerprint) return;
       narrationFingerprint.current = fingerprint;
-      announcedTop3Key.current = top3Fingerprint(narration.top3);
+      announcedTop3Key.current = top3Fingerprint(narration.top3, narration.metric);
       speakScript(narration.script);
     },
     [complexes.length, narration, speakScript],
@@ -373,20 +377,29 @@ export default function HomeScreen() {
       narrationFingerprint.current = null;
       return;
     }
+    if (!narrationSettingsReady) return;
     if (listLoading || complexes.length === 0) return;
     playNarration();
-    // Re-speak on toggle / area change / first ready data; move-watch handles Top3 change announces.
+    // Re-speak on toggle / area / settings / first ready data; move-watch handles TopN change announces.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrationOn, listLoading, areaTarget, complexes.length]);
+  }, [
+    narrationOn,
+    listLoading,
+    areaTarget,
+    complexes.length,
+    narrationSettingsReady,
+    narrationSettings.metric,
+    narrationSettings.topCount,
+  ]);
 
-  // After a move-triggered reload, announce only if Top 3 changed.
+  // After a move-triggered reload, announce only if Top N changed.
   useEffect(() => {
     if (!pendingMoveCheck.current || !moveWatchOn) return;
     pendingMoveCheck.current = false;
 
-    const key = top3Fingerprint(narration.top3);
+    const key = top3Fingerprint(narration.top3, narration.metric);
     if (announcedTop3Key.current !== null && key === announcedTop3Key.current) {
-      setMoveStatus('이동 확인 · Top 3 변동 없음');
+      setMoveStatus(`이동 확인 · Top ${narration.topCount} 변동 없음`);
       return;
     }
 
@@ -394,13 +407,13 @@ export default function HomeScreen() {
     narrationFingerprint.current = narration.script;
     setMoveStatus(
       narration.top3.length > 0
-        ? '이동 감지 · Top 3 갱신, 다시 읽어줍니다'
+        ? `이동 감지 · Top ${narration.topCount} 갱신, 다시 읽어줍니다`
         : '이동 확인 · 주변 매매 단지 없음',
     );
     speakScript(buildTop3ChangedScript(narration));
   }, [complexes, narration, speakScript, moveWatchOn]);
 
-  // Long-press investigate: speak Top 3 once data is ready.
+  // Long-press investigate: speak Top N once data is ready.
   useEffect(() => {
     if (!pendingSpeakTop3.current) return;
     if (listLoading || investigating) return;
@@ -408,16 +421,24 @@ export default function HomeScreen() {
     const stats = buildNearbyNarration(
       complexes,
       areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : undefined,
+      narrationSettings,
     );
     narrationFingerprint.current = stats.script;
-    announcedTop3Key.current = top3Fingerprint(stats.top3);
+    announcedTop3Key.current = top3Fingerprint(stats.top3, stats.metric);
     setShowTop3Card(true);
     if (stats.top3.length === 0) {
       speakScript(stats.script);
       return;
     }
     speakScript(buildTop3InvestigateScript(stats));
-  }, [complexes, listLoading, investigating, areaTarget, speakScript]);
+  }, [
+    complexes,
+    listLoading,
+    investigating,
+    areaTarget,
+    speakScript,
+    narrationSettings,
+  ]);
 
   const runMoveCheck = useCallback(async (reason: 'distance' | 'interval' | 'watch') => {
     if (moveBusy.current) return;
@@ -478,7 +499,10 @@ export default function HomeScreen() {
     }
 
     anchorLoc.current = locationRef.current;
-    announcedTop3Key.current = top3Fingerprint(buildNearbyNarration(complexes).top3);
+    announcedTop3Key.current = top3Fingerprint(
+      buildNearbyNarration(complexes, undefined, narrationSettings).top3,
+      narrationSettings.metric,
+    );
     setMoveStatus('이동 인식 On · 100m 이동 또는 30초마다 확인');
 
     let cancelled = false;
@@ -689,7 +713,15 @@ export default function HomeScreen() {
         enabled={narrationOn}
         speaking={speaking}
         disabled={listLoading && complexes.length === 0}
+        hint={
+          narrationOn
+            ? speaking
+              ? `${narrationSettingsHint(narrationSettings)} 읽는 중…`
+              : `On · ${narrationSettingsHint(narrationSettings)}`
+            : undefined
+        }
         onToggle={onToggleNarration}
+        onPressSettings={() => router.push('/narration-settings')}
       />
 
       <FeatureToggle
@@ -703,7 +735,9 @@ export default function HomeScreen() {
 
       {(narrationOn || moveWatchOn || showTop3Card) && narration.top3.length > 0 ? (
         <View style={styles.narrationCard}>
-          <Text style={styles.narrationTitle}>매매가 Top 3 · {areaFilterLabel}</Text>
+          <Text style={styles.narrationTitle}>
+            매매가 Top {narration.topCount} · {areaFilterLabel}
+          </Text>
           {narration.top3.map((c, i) => (
             <Text key={c.id} style={styles.narrationRow}>
               {i + 1}. {c.aptName} · {formatManwonSpoken(c.medianPrice)}
@@ -714,6 +748,8 @@ export default function HomeScreen() {
             </Text>
           ))}
           <Text style={styles.narrationAvg}>
+            나레이션 {narrationSettingsHint(narrationSettings)}
+            {' · '}
             매매 {narration.avgSale !== null ? formatManwonSpoken(narration.avgSale) : '-'}
             {' · '}
             전세 {narration.avgJeonse !== null ? formatManwonSpoken(narration.avgJeonse) : '-'}

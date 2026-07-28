@@ -140,6 +140,33 @@ export interface NearbySearchSettings {
   radiusKm: number;
 }
 
+/** Metric spoken for each ranked complex in narration. */
+export type NarrationMetric =
+  | 'sale'
+  | 'jeonse'
+  | 'gap'
+  | 'salePerPyeong'
+  | 'jeonsePerPyeong'
+  | 'gapPerPyeong';
+
+export const NARRATION_METRIC_OPTIONS: NarrationMetric[] = [
+  'sale',
+  'jeonse',
+  'gap',
+  'salePerPyeong',
+  'jeonsePerPyeong',
+  'gapPerPyeong',
+];
+
+export const NARRATION_TOP_COUNT_OPTIONS = [1, 2, 3, 4, 5] as const;
+export type NarrationTopCount = (typeof NARRATION_TOP_COUNT_OPTIONS)[number];
+
+export interface NarrationSettings {
+  metric: NarrationMetric;
+  /** How many sale-price-ranked complexes to narrate (1–5). */
+  topCount: NarrationTopCount;
+}
+
 export interface UserLocation {
   lat: number;
   lng: number;
