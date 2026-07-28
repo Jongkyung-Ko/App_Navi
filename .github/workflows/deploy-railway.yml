@@ -1,11 +1,10 @@
 # Redeploy on push when GitHub Secrets are configured.
 #
-# Preferred (project token):
-#   RAILWAY_TOKEN — create in Railway Project → Settings → Tokens
-#   (NOT Account Settings → Tokens)
+# Required:
+#   RAILWAY_TOKEN — Project Settings → Tokens (project token, not account token)
 #
-# Optional:
-#   RAILWAY_SERVICE_ID — service id if the project has multiple services
+# Recommended when the project has multiple services:
+#   RAILWAY_SERVICE_ID — service name or id (Railway → service → Settings → Service ID)
 name: Deploy Railway
 
 on:
@@ -42,8 +41,23 @@ jobs:
           RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
         run: |
           set -euo pipefail
+          echo "Railway status:"
+          railway status || true
+
           if [ -n "${RAILWAY_SERVICE_ID:-}" ]; then
+            echo "Deploying service: $RAILWAY_SERVICE_ID"
             railway up --ci --service "$RAILWAY_SERVICE_ID"
-          else
-            railway up --ci
+            exit 0
           fi
+
+          # Try common service names when secret is not set.
+          for svc in app-navi app_navi App_Navi web server app backend; do
+            echo "Trying service: $svc"
+            if railway up --ci --service "$svc"; then
+              echo "Deployed via service=$svc"
+              exit 0
+            fi
+          done
+
+          echo "::error::Multiple services found. Add GitHub secret RAILWAY_SERVICE_ID (service name or id)."
+          exit 1
