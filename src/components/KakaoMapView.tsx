@@ -1,5 +1,5 @@
 import React, { createElement, useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { API_BASE_URL } from '../services/api';
 import type { HeatPoint, MapPriceMode, MarkerPoint } from '../utils/mapMarkers';
 
@@ -15,6 +15,9 @@ interface KakaoMapViewProps {
   /** Controls embed legend + whether heat or spots are primary. */
   mapPriceMode?: MapPriceMode;
   height?: number;
+  style?: StyleProp<ViewStyle>;
+  /** Max sale markers to send to the embed (default 20). */
+  markerLimit?: number;
   /** Live GPS position for the blue "my location" marker. */
   userLat?: number | null;
   userLng?: number | null;
@@ -57,6 +60,20 @@ type MapCmd =
       lng?: number | null;
     };
 
+function serializeMarkers(list: MarkerPoint[], limit: number) {
+  return list.slice(0, limit).map((m) => ({
+    lat: m.lat,
+    lng: m.lng,
+    title: m.title ?? '',
+    radius: m.radius,
+    fillColor: m.fillColor,
+    strokeColor: m.strokeColor,
+    priceLabel: m.priceLabel ?? '',
+    changeLabel: m.changeLabel ?? '',
+    changeTone: m.changeTone ?? 'flat',
+  }));
+}
+
 /**
  * Web map: load embed page from API server (proper origin for Kakao),
  * with OSM Leaflet fallback baked into that page.
@@ -68,6 +85,8 @@ export function KakaoMapView({
   heatPoints = [],
   mapPriceMode = 'sale',
   height = 320,
+  style,
+  markerLimit = 20,
   userLat = null,
   userLng = null,
   userHeading = null,
@@ -99,6 +118,7 @@ export function KakaoMapView({
     markers,
     heatPoints,
     mapPriceMode,
+    markerLimit,
     radiusMeters,
     radiusCenterLat,
     radiusCenterLng,
@@ -112,13 +132,14 @@ export function KakaoMapView({
     markers,
     heatPoints,
     mapPriceMode,
+    markerLimit,
     radiusMeters,
     radiusCenterLat,
     radiusCenterLng,
   };
 
   // Stable initial URL — live updates go through postMessage.
-  const initial = useRef({ lat, lng, markers });
+  const initial = useRef({ lat, lng, markers, markerLimit });
   const src = useMemo(() => {
     const params = new URLSearchParams({
       lat: String(initial.current.lat),
@@ -127,17 +148,7 @@ export function KakaoMapView({
     if (initial.current.markers.length > 0) {
       params.set(
         'markers',
-        JSON.stringify(
-          initial.current.markers.slice(0, 20).map((m) => ({
-            lat: m.lat,
-            lng: m.lng,
-            title: m.title ?? '',
-            radius: m.radius,
-            fillColor: m.fillColor,
-            strokeColor: m.strokeColor,
-            priceLabel: m.priceLabel ?? '',
-          })),
-        ),
+        JSON.stringify(serializeMarkers(initial.current.markers, initial.current.markerLimit)),
       );
     }
     return `${API_BASE_URL}/map-embed?${params.toString()}`;
@@ -174,7 +185,7 @@ export function KakaoMapView({
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setMarkers',
-      markers: p.mapPriceMode === 'sale' ? p.markers.slice(0, 20) : [],
+      markers: p.mapPriceMode === 'sale' ? serializeMarkers(p.markers, p.markerLimit) : [],
     });
     postCmd({
       type: 'appnavi:map-cmd',
@@ -196,6 +207,10 @@ export function KakaoMapView({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onMessage = (event: MessageEvent) => {
+      // Ignore messages from other iframes when remounting maps.
+      if (iframeRef.current && event.source && event.source !== iframeRef.current.contentWindow) {
+        return;
+      }
       const data = event.data;
       if (!data || typeof data !== 'object') return;
       const type = (data as { type?: string }).type;
@@ -248,14 +263,14 @@ export function KakaoMapView({
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setMarkers',
-      markers: mapPriceMode === 'sale' ? markers.slice(0, 20) : [],
+      markers: mapPriceMode === 'sale' ? serializeMarkers(markers, markerLimit) : [],
     });
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setHeatLayer',
       points: mapPriceMode === 'pyeong' ? heatPoints.slice(0, 80) : [],
     });
-  }, [markers, heatPoints, mapPriceMode]);
+  }, [markers, heatPoints, mapPriceMode, markerLimit]);
 
   useEffect(() => {
     postCmd({
@@ -271,7 +286,7 @@ export function KakaoMapView({
   }, [radiusMeters, radiusCenterLat, radiusCenterLng]);
 
   return (
-    <View style={[styles.wrap, { height }]}>
+    <View style={[styles.wrap, height != null ? { height } : null, style]}>
       {createElement('iframe', {
         ref: (el: HTMLIFrameElement | null) => {
           iframeRef.current = el;
