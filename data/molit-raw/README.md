@@ -36,10 +36,19 @@ python3 scripts/backfill/parse_rt_molit_csv.py \
   --write
 ```
 
-`safeForMerge: true` in the extract report means headers/mapping look safe enough to wire into the app later.
+`safeForMerge: true` in the extract report means headers/mapping look safe enough to wire into the app.
+
+## Serving in the app
+
+1. Pack normalized buckets:
+   ```bash
+   tar -czf data/molit-store/seoul-normalized.tgz -C data/molit-store normalized
+   ```
+2. Docker/Railway image extracts this archive to `MOLIT_STORE_DIR`.
+3. `/api/trades` reads store-first per `(lawdCd, month)`, then falls back to live MOLIT.
 
 ## Notes
 
 - 전월세 파일의 월세>0 건은 앱과 동일하게 제외(순수 전세만).
 - 해제사유발생일이 있는 건은 제외.
-- 대용량 raw/normalized는 git에 올리지 않습니다.
+- 대용량 raw/normalized는 git에 올리지 않습니다. 압축본(`*.tgz`)만 커밋합니다.
