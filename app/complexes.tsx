@@ -13,7 +13,8 @@ import { ComplexList } from '../src/components/ComplexList';
 import { ErrorBanner } from '../src/components/ErrorBanner';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { fetchNearbyComplexes } from '../src/services/api';
-import type { ComplexSummary } from '../src/types';
+import { formatRadiusLabel } from '../src/services/nearbySettings';
+import type { ComplexSummary, NearbySearchScope } from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
 import { sortBySalePriceDesc } from '../src/utils/mapMarkers';
 
@@ -25,8 +26,12 @@ export default function ComplexesScreen() {
     lng?: string;
     region?: string;
     areaTarget?: string;
+    scope?: string;
+    radiusKm?: string;
   }>();
 
+  const scope: NearbySearchScope = params.scope === 'radius' ? 'radius' : 'sigungu';
+  const radiusKm = params.radiusKm ? Number(params.radiusKm) : 1;
   const initialArea = params.areaTarget ? Number(params.areaTarget) : undefined;
   const [query, setQuery] = useState('');
   const [areaTarget, setAreaTarget] = useState<number | undefined>(
@@ -52,14 +57,16 @@ export default function ComplexesScreen() {
     setLoading(true);
     setError(null);
     try {
+      const useRadius = scope === 'radius' && Number.isFinite(radiusKm);
       const res = await fetchNearbyComplexes({
         lawdCd: params.lawdCd,
         months: 3,
         q: query.trim() || undefined,
         areaTarget,
-        enrichCoords: false,
+        enrichCoords: useRadius,
         lat: params.lat ? Number(params.lat) : undefined,
         lng: params.lng ? Number(params.lng) : undefined,
+        radiusKm: useRadius ? radiusKm : undefined,
       });
       setItems(sortBySalePriceDesc(res.complexes));
       if (res.areaBands?.length) {
@@ -70,7 +77,7 @@ export default function ComplexesScreen() {
     } finally {
       setLoading(false);
     }
-  }, [params.lawdCd, params.lat, params.lng, query, areaTarget]);
+  }, [params.lawdCd, params.lat, params.lng, query, areaTarget, scope, radiusKm]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 250);
@@ -85,6 +92,10 @@ export default function ComplexesScreen() {
 
   const areaNavParam = areaTarget !== undefined ? String(areaTarget) : undefined;
   const areaLabel = areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
+  const emptyMessage =
+    scope === 'radius'
+      ? `반경 ${formatRadiusLabel(radiusKm)} 안 조건에 맞는 단지가 없습니다.`
+      : '조건에 맞는 단지가 없습니다.';
 
   return (
     <ScrollView
@@ -94,7 +105,11 @@ export default function ComplexesScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.region}>{params.region ?? `법정동 ${params.lawdCd}`}</Text>
-        <Text style={styles.hint}>단지명·동으로 검색하거나 면적대를 골라 보세요.</Text>
+        <Text style={styles.hint}>
+          {scope === 'radius'
+            ? `내 위치 반경 ${formatRadiusLabel(radiusKm)} · 단지명·동 검색 또는 면적대 선택`
+            : '단지명·동으로 검색하거나 면적대를 골라 보세요.'}
+        </Text>
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -119,7 +134,7 @@ export default function ComplexesScreen() {
       ) : (
         <ComplexList
           items={items}
-          emptyMessage="조건에 맞는 단지가 없습니다."
+          emptyMessage={emptyMessage}
           onPress={(item) =>
             router.push({
               pathname: '/complex/[id]',

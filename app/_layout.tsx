@@ -17,6 +17,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ title: 'App Navi' }} />
         <Stack.Screen name="complexes" options={{ title: '주변 단지 시세' }} />
         <Stack.Screen name="complex/[id]" options={{ title: '단지 상세' }} />
+        <Stack.Screen name="settings" options={{ title: '설정' }} />
       </Stack>
     </SafeAreaProvider>
   );

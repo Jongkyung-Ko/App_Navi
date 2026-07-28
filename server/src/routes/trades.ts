@@ -8,8 +8,14 @@ import {
   recentYearMonths,
   type ComplexSummary,
 } from '../types.js';
+import { distanceMeters } from '../utils/geo.js';
 
 export const tradesRouter = Router();
+
+/** Max complexes to geocode when filtering by radius (Kakao rate / latency). */
+const RADIUS_ENRICH_CAP = 80;
+const DEFAULT_ENRICH_CAP = 15;
+const ENRICH_CONCURRENCY = 5;
 
 tradesRouter.get('/', async (req, res) => {
   try {
@@ -23,9 +29,19 @@ tradesRouter.get('/', async (req, res) => {
     const lng = req.query.lng ? Number(req.query.lng) : undefined;
     const includeJeonse = req.query.includeJeonse !== 'false';
     const prewarm = req.query.prewarm !== 'false';
+    const rawRadius = req.query.radiusKm != null ? Number(req.query.radiusKm) : undefined;
+    const radiusKm =
+      rawRadius !== undefined && Number.isFinite(rawRadius)
+        ? Math.min(10, Math.max(0.3, rawRadius))
+        : undefined;
 
     if (!/^\d{5}$/.test(lawdCd)) {
       res.status(400).json({ error: 'lawdCd must be a 5-digit 시군구 (구·시·군) code' });
+      return;
+    }
+
+    if (radiusKm !== undefined && (lat === undefined || lng === undefined || !Number.isFinite(lat) || !Number.isFinite(lng))) {
+      res.status(400).json({ error: 'radiusKm requires lat and lng' });
       return;
     }
 
@@ -51,8 +67,28 @@ tradesRouter.get('/', async (req, res) => {
       );
     }
 
-    if (enrichCoords) {
-      complexes = await enrichComplexCoords(complexes.slice(0, 15), lat, lng);
+    const useRadius = radiusKm !== undefined && lat !== undefined && lng !== undefined;
+    const shouldEnrich = enrichCoords || useRadius;
+    if (shouldEnrich) {
+      const cap = useRadius ? RADIUS_ENRICH_CAP : DEFAULT_ENRICH_CAP;
+      const searchRadiusM = useRadius ? Math.max(5000, Math.round(radiusKm! * 1000 * 1.5)) : 5000;
+      complexes = await enrichComplexCoords(complexes.slice(0, cap), lat, lng, {
+        concurrency: ENRICH_CONCURRENCY,
+        searchRadiusM,
+      });
+    }
+
+    if (useRadius) {
+      const origin = { lat: lat!, lng: lng! };
+      const maxM = radiusKm! * 1000;
+      complexes = complexes
+        .map((c) => {
+          if (c.lat == null || c.lng == null) return null;
+          const distanceM = distanceMeters(origin, { lat: c.lat, lng: c.lng });
+          if (distanceM > maxM) return null;
+          return { ...c, distanceM: Math.round(distanceM) };
+        })
+        .filter((c): c is ComplexSummary & { distanceM: number } => c != null);
     }
 
     res.json({
@@ -64,6 +100,7 @@ tradesRouter.get('/', async (req, res) => {
       complexes,
       areaBands,
       selectedAreaTarget: areaTarget ?? null,
+      radiusKm: radiusKm ?? null,
       mock: process.env.MOLIT_SERVICE_KEY?.startsWith('your_') === true,
     });
 
@@ -140,11 +177,30 @@ async function enrichComplexCoords(
   complexes: ComplexSummary[],
   lat?: number,
   lng?: number,
+  opts?: { concurrency?: number; searchRadiusM?: number },
 ): Promise<ComplexSummary[]> {
-  const results: ComplexSummary[] = [];
-  for (const c of complexes) {
-    const hit = await searchPlaceKeyword(`${c.dong} ${c.aptName}`, lat, lng);
-    results.push(hit ? { ...c, lat: hit.lat, lng: hit.lng } : c);
+  if (complexes.length === 0) return [];
+  const concurrency = Math.max(1, opts?.concurrency ?? 1);
+  const searchRadiusM = opts?.searchRadiusM ?? 5000;
+  const results: ComplexSummary[] = new Array(complexes.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const idx = next;
+      next += 1;
+      if (idx >= complexes.length) return;
+      const c = complexes[idx]!;
+      const hit = await searchPlaceKeyword(
+        `${c.dong} ${c.aptName}`,
+        lat,
+        lng,
+        searchRadiusM,
+      );
+      results[idx] = hit ? { ...c, lat: hit.lat, lng: hit.lng } : c;
+    }
   }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, complexes.length) }, () => worker()));
   return results;
 }

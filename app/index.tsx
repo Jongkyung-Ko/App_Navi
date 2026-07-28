@@ -18,17 +18,26 @@ import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { NarrationToggle } from '../src/components/NarrationToggle';
 import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall';
+import { SearchScopeChips } from '../src/components/SearchScopeChips';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
+import { useNearbySettings } from '../src/hooks/useNearbySettings';
 import { usePwaInstall } from '../src/hooks/usePwaInstall';
 import { fetchKakaoJsKey, fetchNearbyComplexes, reverseGeocode } from '../src/services/api';
 import { getNearbyCache, setNearbyCache } from '../src/services/nearbyCache';
+import { formatRadiusLabel, scopeLabel } from '../src/services/nearbySettings';
 import {
   getCurrentLocation,
   LocationError,
+  watchLiveLocation,
   watchLocationChanges,
 } from '../src/services/location';
 import { speakNarration, stopNarration } from '../src/services/speech';
-import type { ComplexSummary, ReverseGeocodeResult, UserLocation } from '../src/types';
+import type {
+  ComplexSummary,
+  NearbySearchScope,
+  ReverseGeocodeResult,
+  UserLocation,
+} from '../src/types';
 import { formatAreaBandLabel } from '../src/utils/areaBands';
 import { confirmMapInvestigate } from '../src/utils/confirm';
 import { distanceMeters } from '../src/utils/geo';
@@ -43,11 +52,15 @@ import {
 
 const MOVE_THRESHOLD_M = 100;
 const MOVE_POLL_MS = 30_000;
+/** After the user pans the map, return to GPS center if idle this long — unless prices were investigated. */
+const MAP_IDLE_RETURN_MS = 15_000;
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { location, address, loading, error, refresh } = useCurrentLocation();
+  const { settings: nearbySettings, ready: nearbySettingsReady, update: updateNearbySettings } =
+    useNearbySettings();
   const pwa = usePwaInstall();
   const [jsKey, setJsKey] = useState<string | null>(null);
   const [complexes, setComplexes] = useState<ComplexSummary[]>([]);
@@ -64,6 +77,10 @@ export default function HomeScreen() {
   const [mapAddress, setMapAddress] = useState<ReverseGeocodeResult | null>(null);
   const [investigating, setInvestigating] = useState(false);
   const [showTop3Card, setShowTop3Card] = useState(false);
+  /** Live GPS for the blue map marker (updated more often than address refresh). */
+  const [liveLocation, setLiveLocation] = useState<UserLocation | null>(null);
+  /** Keep map centered on GPS until the user pans (or investigates prices). */
+  const [followUser, setFollowUser] = useState(true);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
@@ -77,21 +94,93 @@ export default function HomeScreen() {
   const areaTargetRef = useRef(areaTarget);
   const mapFocusRef = useRef(mapFocus);
   const mapAddressRef = useRef(mapAddress);
+  const nearbySettingsRef = useRef(nearbySettings);
+  const idleReturnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** True after a successful 매매가 investigate — blocks 15s auto-return until locate is pressed. */
+  const priceLockRef = useRef(false);
 
   locationRef.current = location;
   addressRef.current = address;
   areaTargetRef.current = areaTarget;
   mapFocusRef.current = mapFocus;
   mapAddressRef.current = mapAddress;
+  nearbySettingsRef.current = nearbySettings;
 
-  const activeLoc = mapFocus ?? location;
+  const userLoc = liveLocation ?? location;
+  /** Stable point for trade lookups — avoid refetching on every live GPS tick. */
+  const searchLoc = mapFocus ?? location ?? liveLocation;
+  const activeLoc = mapFocus ?? userLoc;
   const activeAddress = mapFocus ? mapAddress : address;
+
+  const clearIdleReturnTimer = useCallback(() => {
+    if (idleReturnTimer.current) {
+      clearTimeout(idleReturnTimer.current);
+      idleReturnTimer.current = null;
+    }
+  }, []);
+
+  const resumeFollowMyLocation = useCallback(() => {
+    clearIdleReturnTimer();
+    priceLockRef.current = false;
+    setMapFocus(null);
+    setMapAddress(null);
+    setFollowUser(true);
+  }, [clearIdleReturnTimer]);
 
   useEffect(() => {
     void fetchKakaoJsKey()
       .then(setJsKey)
       .catch(() => setJsKey(null));
   }, []);
+
+  // Seed / sync live GPS from the one-shot location hook.
+  useEffect(() => {
+    if (location) setLiveLocation(location);
+  }, [location]);
+
+  // Nav-style live GPS for the blue marker + follow-centering (~1s / 1m).
+  useEffect(() => {
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
+    void watchLiveLocation((loc) => {
+      if (cancelled) return;
+      setLiveLocation(loc);
+    })
+      .then((sub) => {
+        if (cancelled) {
+          sub.remove();
+          return;
+        }
+        subscription = sub;
+      })
+      .catch(() => {
+        // Fall back to one-shot location from useCurrentLocation.
+      });
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, []);
+
+  // 15s idle return after pan — skipped once 매매가 was investigated (price lock).
+  const onMapUserInteract = useCallback(() => {
+    if (priceLockRef.current || mapFocusRef.current) {
+      setFollowUser(false);
+      clearIdleReturnTimer();
+      return;
+    }
+    setFollowUser(false);
+    clearIdleReturnTimer();
+    idleReturnTimer.current = setTimeout(() => {
+      idleReturnTimer.current = null;
+      if (priceLockRef.current || mapFocusRef.current) return;
+      setFollowUser(true);
+    }, MAP_IDLE_RETURN_MS);
+  }, [clearIdleReturnTimer]);
+
+  useEffect(() => {
+    return () => clearIdleReturnTimer();
+  }, [clearIdleReturnTimer]);
 
   const loadComplexes = useCallback(
     async (opts?: {
@@ -109,6 +198,7 @@ export default function HomeScreen() {
       const lng = opts?.lng ?? focus?.lng ?? locationRef.current?.lng;
       const selectedArea =
         opts && 'areaTarget' in opts ? opts.areaTarget : areaTargetRef.current;
+      const search = nearbySettingsRef.current;
       if (!lawdCd || lat === undefined || lng === undefined) return;
 
       if (!opts?.quiet) setListLoading(true);
@@ -121,6 +211,7 @@ export default function HomeScreen() {
           lat,
           lng,
           areaTarget: selectedArea,
+          radiusKm: search.scope === 'radius' ? search.radiusKm : undefined,
         });
         const ranked = sortBySalePriceDesc(res.complexes).slice(0, 20);
         setComplexes(ranked);
@@ -131,6 +222,8 @@ export default function HomeScreen() {
           setNearbyCache({
             lawdCd,
             areaTarget: selectedArea,
+            scope: search.scope,
+            radiusKm: search.scope === 'radius' ? search.radiusKm : undefined,
             complexes: ranked,
             areaBands: bandTargets,
           });
@@ -145,27 +238,43 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    if (!activeAddress?.lawdCd || !activeLoc) return;
+    if (!nearbySettingsReady) return;
+    if (!activeAddress?.lawdCd || !searchLoc) return;
     if (skipAutoLoad.current) {
       skipAutoLoad.current = false;
       return;
     }
     void loadComplexes({
       lawdCd: activeAddress.lawdCd,
-      lat: activeLoc.lat,
-      lng: activeLoc.lng,
+      lat: searchLoc.lat,
+      lng: searchLoc.lng,
     });
-  }, [loadComplexes, activeAddress?.lawdCd, activeLoc?.lat, activeLoc?.lng, areaTarget]);
+  }, [
+    loadComplexes,
+    nearbySettingsReady,
+    nearbySettings.scope,
+    nearbySettings.radiusKm,
+    activeAddress?.lawdCd,
+    searchLoc?.lat,
+    searchLoc?.lng,
+    areaTarget,
+  ]);
 
   const goToMyLocation = useCallback(async () => {
     setInvestigating(true);
     setListError(null);
     try {
-      setMapFocus(null);
-      setMapAddress(null);
+      resumeFollowMyLocation();
       const loc = await getCurrentLocation();
+      setLiveLocation(loc);
       const geo = await reverseGeocode(loc.lat, loc.lng);
-      const cached = getNearbyCache(geo.lawdCd, areaTargetRef.current);
+      const search = nearbySettingsRef.current;
+      const cached = getNearbyCache(
+        geo.lawdCd,
+        areaTargetRef.current,
+        search.scope,
+        search.scope === 'radius' ? search.radiusKm : undefined,
+      );
       skipAutoLoad.current = true;
       await refresh();
       if (cached && cached.complexes.length > 0) {
@@ -193,11 +302,11 @@ export default function HomeScreen() {
     } finally {
       setInvestigating(false);
     }
-  }, [loadComplexes, refresh]);
+  }, [loadComplexes, refresh, resumeFollowMyLocation]);
 
   const investigateAt = useCallback(
     async (plat: number, plng: number) => {
-      const ok = await confirmMapInvestigate();
+      const ok = await confirmMapInvestigate(nearbySettingsRef.current);
       if (!ok) return;
       setInvestigating(true);
       setListError(null);
@@ -205,6 +314,9 @@ export default function HomeScreen() {
         const geo = await reverseGeocode(plat, plng);
         pendingSpeakTop3.current = true;
         setShowTop3Card(true);
+        clearIdleReturnTimer();
+        priceLockRef.current = true;
+        setFollowUser(false);
         setMapFocus({ lat: plat, lng: plng });
         setMapAddress(geo);
       } catch (err) {
@@ -214,7 +326,7 @@ export default function HomeScreen() {
         setInvestigating(false);
       }
     },
-    [],
+    [clearIdleReturnTimer],
   );
 
   const onRefresh = useCallback(async () => {
@@ -340,8 +452,9 @@ export default function HomeScreen() {
       });
       // Also sync main location UI when we moved meaningfully.
       if (movedM >= MOVE_THRESHOLD_M) {
-        setMapFocus(null);
-        setMapAddress(null);
+        // Move-watch refresh recenters on GPS; clears investigate lock.
+        resumeFollowMyLocation();
+        setLiveLocation(loc);
         await refresh();
       }
     } catch (err) {
@@ -356,7 +469,7 @@ export default function HomeScreen() {
     } finally {
       moveBusy.current = false;
     }
-  }, [loadComplexes, refresh]);
+  }, [loadComplexes, refresh, resumeFollowMyLocation]);
 
   useEffect(() => {
     if (!moveWatchOn) {
@@ -429,15 +542,30 @@ export default function HomeScreen() {
     setAreaTarget(next);
   };
 
+  const onChangeSearchScope = (scope: NearbySearchScope) => {
+    narrationFingerprint.current = null;
+    announcedTop3Key.current = null;
+    void updateNearbySettings({ scope });
+  };
+
   const areaNavParam = areaTarget !== undefined ? String(areaTarget) : undefined;
   const areaFilterLabel =
     areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
+  const searchScopeLabel = scopeLabel(nearbySettings);
 
   const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 20), [complexes]);
   const rankedList = useMemo(() => sortBySalePriceDesc(complexes).slice(0, 8), [complexes]);
 
-  const lat = activeLoc?.lat ?? activeAddress?.lat ?? 37.5665;
-  const lng = activeLoc?.lng ?? activeAddress?.lng ?? 126.978;
+  const lat =
+    (followUser ? userLoc?.lat : null) ??
+    activeLoc?.lat ??
+    activeAddress?.lat ??
+    37.5665;
+  const lng =
+    (followUser ? userLoc?.lng : null) ??
+    activeLoc?.lng ??
+    activeAddress?.lng ??
+    126.978;
   const usingMapFocus = mapFocus !== null;
 
   const moveHint = moveWatchOn
@@ -455,6 +583,13 @@ export default function HomeScreen() {
           title: 'App Navi',
           headerRight: () => (
             <View style={styles.headerRight}>
+              <Pressable
+                accessibilityLabel="설정"
+                onPress={() => router.push('/settings')}
+                style={styles.settingsHeaderBtn}
+              >
+                <Text style={styles.settingsHeaderText}>설정</Text>
+              </Pressable>
               <PwaInstallButton
                 compact
                 installed={pwa.isInstalled}
@@ -476,7 +611,14 @@ export default function HomeScreen() {
           jsKey={jsKey}
           markers={mapMarkers}
           height={360}
+          userLat={userLoc?.lat ?? null}
+          userLng={userLoc?.lng ?? null}
+          userHeading={userLoc?.heading ?? null}
+          followUser={followUser && !usingMapFocus}
+          focusLat={mapFocus?.lat ?? null}
+          focusLng={mapFocus?.lng ?? null}
           onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
+          onUserInteract={onMapUserInteract}
         />
         <View style={styles.mapAreaChips} pointerEvents="box-none">
           <AreaBandChips
@@ -488,7 +630,11 @@ export default function HomeScreen() {
         </View>
         <Pressable
           accessibilityLabel="현재 위치로 이동"
-          style={[styles.locateBtn, investigating && styles.locateBtnDisabled]}
+          style={[
+            styles.locateBtn,
+            !followUser && styles.locateBtnActive,
+            investigating && styles.locateBtnDisabled,
+          ]}
           disabled={investigating}
           onPress={() => void goToMyLocation()}
         >
@@ -501,14 +647,28 @@ export default function HomeScreen() {
         ) : null}
       </View>
 
-      <AddressCard address={activeAddress} loading={loading || investigating} />
+      <AddressCard
+        address={activeAddress}
+        loading={loading || investigating}
+        searchSettings={nearbySettings}
+      />
+      <SearchScopeChips
+        scope={nearbySettings.scope}
+        radiusKm={nearbySettings.radiusKm}
+        onChange={onChangeSearchScope}
+        onPressRadiusSettings={() => router.push('/settings')}
+      />
       {usingMapFocus ? (
         <Text style={styles.focusHint}>
-          선택한 지점의 시군구(구·시·군) 범위로 매매가를 조사합니다
+          {nearbySettings.scope === 'radius'
+            ? `선택한 지점 기준 반경 ${formatRadiusLabel(nearbySettings.radiusKm)}로 매매가를 조사합니다`
+            : '선택한 지점의 시군구(구·시·군) 범위로 매매가를 조사합니다'}
         </Text>
       ) : (
         <Text style={styles.focusHint}>
-          현재 위치 또는 길게 누른 지점의 시군구(구·시·군) 단위로 매매가를 조사합니다
+          {nearbySettings.scope === 'radius'
+            ? `현재 위치 반경 ${formatRadiusLabel(nearbySettings.radiusKm)} 안 단지를 찾습니다 · 설정에서 반경 변경`
+            : '현재 위치 또는 길게 누른 지점의 시군구(구·시·군) 단위로 매매가를 조사합니다'}
         </Text>
       )}
       <ErrorBanner message={error ?? listError} />
@@ -573,8 +733,14 @@ export default function HomeScreen() {
                 lat: String(lat),
                 lng: String(lng),
                 region:
-                  activeAddress.sigunguLabel ??
-                  `${activeAddress.region1} ${activeAddress.region2}`,
+                  nearbySettings.scope === 'radius'
+                    ? `반경 ${formatRadiusLabel(nearbySettings.radiusKm)}`
+                    : activeAddress.sigunguLabel ??
+                      `${activeAddress.region1} ${activeAddress.region2}`,
+                scope: nearbySettings.scope,
+                ...(nearbySettings.scope === 'radius'
+                  ? { radiusKm: String(nearbySettings.radiusKm) }
+                  : {}),
                 ...(areaNavParam ? { areaTarget: areaNavParam } : {}),
               },
             });
@@ -588,7 +754,7 @@ export default function HomeScreen() {
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>주변 단지 시세</Text>
         <Text style={styles.sectionSub}>
-          시군구(구·시·군) 단위 · 매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
+          {searchScopeLabel} · 매매가 높은 순 · 최근 3개월 · {areaFilterLabel}
         </Text>
       </View>
 
@@ -598,9 +764,13 @@ export default function HomeScreen() {
         <ComplexList
           items={rankedList}
           emptyMessage={
-            areaTarget !== undefined
-              ? `이 지역에 ${areaFilterLabel} 최근 실거래가 없습니다.`
-              : '이 지역에 최근 아파트 실거래가 없습니다.'
+            nearbySettings.scope === 'radius'
+              ? areaTarget !== undefined
+                ? `반경 ${formatRadiusLabel(nearbySettings.radiusKm)} 안 ${areaFilterLabel} 최근 실거래가 없습니다.`
+                : `반경 ${formatRadiusLabel(nearbySettings.radiusKm)} 안 최근 아파트 실거래가 없습니다.`
+              : areaTarget !== undefined
+                ? `이 지역에 ${areaFilterLabel} 최근 실거래가 없습니다.`
+                : '이 지역에 최근 아파트 실거래가 없습니다.'
           }
           onPress={(item) =>
             router.push({
@@ -630,7 +800,19 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     justifyContent: 'center',
+  },
+  settingsHeaderBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  settingsHeaderText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1a2332',
   },
   mapAreaChips: {
     position: 'absolute',
@@ -650,6 +832,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(26, 35, 50, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  locateBtnActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.95)',
   },
   locateBtnDisabled: {
     opacity: 0.5,

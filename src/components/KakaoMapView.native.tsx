@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
@@ -13,8 +13,28 @@ interface KakaoMapViewProps {
   jsKey: string | null;
   markers?: MarkerPoint[];
   height?: number;
+  userLat?: number | null;
+  userLng?: number | null;
+  userHeading?: number | null;
+  followUser?: boolean;
+  focusLat?: number | null;
+  focusLng?: number | null;
   onLongPressLocation?: (lat: number, lng: number) => void;
+  onUserInteract?: () => void;
 }
+
+type MapCmd =
+  | {
+      type: 'appnavi:map-cmd';
+      cmd: 'setUserLocation';
+      lat: number;
+      lng: number;
+      center: boolean;
+      heading?: number | null;
+    }
+  | { type: 'appnavi:map-cmd'; cmd: 'setCenter'; lat: number; lng: number }
+  | { type: 'appnavi:map-cmd'; cmd: 'setFocus'; lat: number | null; lng: number | null }
+  | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] };
 
 /** iOS / Android: WebView loads server map-embed (Kakao + OSM fallback). */
 export function KakaoMapView({
@@ -22,21 +42,39 @@ export function KakaoMapView({
   lng,
   markers = [],
   height = 320,
+  userLat = null,
+  userLng = null,
+  userHeading = null,
+  followUser = false,
+  focusLat = null,
+  focusLng = null,
   onLongPressLocation,
+  onUserInteract,
 }: KakaoMapViewProps) {
-  const handlerRef = useRef(onLongPressLocation);
-  handlerRef.current = onLongPressLocation;
+  const webRef = useRef<WebView>(null);
+  const mapReadyRef = useRef(false);
+  const longPressRef = useRef(onLongPressLocation);
+  const interactRef = useRef(onUserInteract);
+  longPressRef.current = onLongPressLocation;
+  interactRef.current = onUserInteract;
 
+  const followRef = useRef(followUser);
+  followRef.current = followUser;
+
+  const propsRef = useRef({ userLat, userLng, userHeading, focusLat, focusLng, markers });
+  propsRef.current = { userLat, userLng, userHeading, focusLat, focusLng, markers };
+
+  const initial = useRef({ lat, lng, markers });
   const uri = useMemo(() => {
     const params = new URLSearchParams({
-      lat: String(lat),
-      lng: String(lng),
+      lat: String(initial.current.lat),
+      lng: String(initial.current.lng),
     });
-    if (markers.length > 0) {
+    if (initial.current.markers.length > 0) {
       params.set(
         'markers',
         JSON.stringify(
-          markers.slice(0, 20).map((m) => ({
+          initial.current.markers.slice(0, 20).map((m) => ({
             lat: m.lat,
             lng: m.lng,
             title: m.title ?? '',
@@ -49,7 +87,39 @@ export function KakaoMapView({
       );
     }
     return `${API_BASE_URL}/map-embed?${params.toString()}`;
-  }, [lat, lng, markers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const postCmd = (cmd: MapCmd) => {
+    if (!mapReadyRef.current || !webRef.current) return;
+    const js = `window.postMessage(${JSON.stringify(cmd)}, '*'); true;`;
+    webRef.current.injectJavaScript(js);
+  };
+
+  const syncAfterReady = () => {
+    const p = propsRef.current;
+    if (p.userLat != null && p.userLng != null && Number.isFinite(p.userLat) && Number.isFinite(p.userLng)) {
+      postCmd({
+        type: 'appnavi:map-cmd',
+        cmd: 'setUserLocation',
+        lat: p.userLat,
+        lng: p.userLng,
+        center: followRef.current,
+        heading: p.userHeading ?? null,
+      });
+    }
+    if (p.focusLat != null && p.focusLng != null) {
+      postCmd({ type: 'appnavi:map-cmd', cmd: 'setFocus', lat: p.focusLat, lng: p.focusLng });
+      postCmd({ type: 'appnavi:map-cmd', cmd: 'setCenter', lat: p.focusLat, lng: p.focusLng });
+    }
+    if (p.markers.length > 0) {
+      postCmd({
+        type: 'appnavi:map-cmd',
+        cmd: 'setMarkers',
+        markers: p.markers.slice(0, 20),
+      });
+    }
+  };
 
   const onMessage = (event: WebViewMessageEvent) => {
     try {
@@ -58,19 +128,60 @@ export function KakaoMapView({
         lat?: number;
         lng?: number;
       };
-      if (data.type !== 'appnavi:map-longpress') return;
-      const plat = Number(data.lat);
-      const plng = Number(data.lng);
-      if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
-      handlerRef.current?.(plat, plng);
+      if (data.type === 'appnavi:map-ready') {
+        mapReadyRef.current = true;
+        syncAfterReady();
+        return;
+      }
+      if (data.type === 'appnavi:map-longpress') {
+        const plat = Number(data.lat);
+        const plng = Number(data.lng);
+        if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+        longPressRef.current?.(plat, plng);
+        return;
+      }
+      if (data.type === 'appnavi:map-interact') {
+        interactRef.current?.();
+      }
     } catch {
       // ignore
     }
   };
 
+  useEffect(() => {
+    if (userLat == null || userLng == null) return;
+    if (!Number.isFinite(userLat) || !Number.isFinite(userLng)) return;
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setUserLocation',
+      lat: userLat,
+      lng: userLng,
+      center: followUser,
+      heading: userHeading ?? null,
+    });
+  }, [userLat, userLng, userHeading, followUser]);
+
+  useEffect(() => {
+    if (focusLat != null && focusLng != null && Number.isFinite(focusLat) && Number.isFinite(focusLng)) {
+      postCmd({ type: 'appnavi:map-cmd', cmd: 'setFocus', lat: focusLat, lng: focusLng });
+      postCmd({ type: 'appnavi:map-cmd', cmd: 'setCenter', lat: focusLat, lng: focusLng });
+      return;
+    }
+    postCmd({ type: 'appnavi:map-cmd', cmd: 'setFocus', lat: null, lng: null });
+  }, [focusLat, focusLng]);
+
+  useEffect(() => {
+    postCmd({
+      type: 'appnavi:map-cmd',
+      cmd: 'setMarkers',
+      markers: markers.slice(0, 20),
+    });
+  }, [markers]);
+
   return (
     <View style={[styles.wrap, { height }]}>
       <WebView
+        ref={webRef}
         originWhitelist={['*']}
         source={{ uri }}
         style={styles.web}

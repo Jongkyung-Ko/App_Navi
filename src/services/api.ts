@@ -76,6 +76,8 @@ export async function fetchNearbyComplexes(params: {
   enrichCoords?: boolean;
   lat?: number;
   lng?: number;
+  /** When set, server keeps only complexes within this radius of lat/lng. */
+  radiusKm?: number;
 }): Promise<TradesResponse> {
   const search = new URLSearchParams({
     lawdCd: params.lawdCd,
@@ -86,7 +88,10 @@ export async function fetchNearbyComplexes(params: {
   if (params.enrichCoords) search.set('enrichCoords', 'true');
   if (params.lat !== undefined) search.set('lat', String(params.lat));
   if (params.lng !== undefined) search.set('lng', String(params.lng));
-  return request(`/api/trades?${search.toString()}`);
+  if (params.radiusKm !== undefined) search.set('radiusKm', String(params.radiusKm));
+  // Radius mode geocodes more complexes — allow a longer timeout.
+  const timeoutMs = params.radiusKm !== undefined ? 60000 : 20000;
+  return request(`/api/trades?${search.toString()}`, { timeoutMs });
 }
 
 export async function fetchComplexDetail(params: {

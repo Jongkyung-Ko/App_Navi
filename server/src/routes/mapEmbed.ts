@@ -46,6 +46,7 @@ function buildMapPage(opts: {
       padding:5px 10px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.12); pointer-events:none; }
     .leaflet-bottom.leaflet-right { margin-bottom: 4px; }
     .spot-icon { background: transparent !important; border: none !important; }
+    .me-icon { background: transparent !important; border: none !important; }
     .spot-wrap {
       display: flex;
       flex-direction: column;
@@ -73,6 +74,55 @@ function buildMapPage(opts: {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .me-wrap {
+      width: 28px;
+      height: 28px;
+      position: relative;
+      transition: transform 0.2s linear;
+      will-change: transform;
+    }
+    .me-pulse {
+      position: absolute;
+      left: 0; top: 0; right: 0; bottom: 0;
+      border-radius: 50%;
+      background: rgba(37, 99, 235, 0.28);
+      animation: mePulse 1.8s ease-out infinite;
+    }
+    .me-dot {
+      position: absolute;
+      left: 8px; top: 8px;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #2563eb;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.35);
+    }
+    .me-arrow {
+      position: absolute;
+      left: 5px; top: 3px;
+      width: 0; height: 0;
+      border-left: 9px solid transparent;
+      border-right: 9px solid transparent;
+      border-bottom: 20px solid #2563eb;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,.35));
+      display: none;
+    }
+    .me-arrow::after {
+      content: '';
+      position: absolute;
+      left: -5px; top: 5px;
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-bottom: 11px solid #fff;
+    }
+    .me-wrap.has-heading .me-dot { display: none; }
+    .me-wrap.has-heading .me-arrow { display: block; }
+    @keyframes mePulse {
+      0% { transform: scale(0.55); opacity: 0.9; }
+      70% { transform: scale(1.35); opacity: 0; }
+      100% { transform: scale(1.35); opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -90,12 +140,13 @@ function buildMapPage(opts: {
   <script>
     const lat = ${lat};
     const lng = ${lng};
-    const markers = ${markerJson};
+    let markers = ${markerJson};
     const kakaoKey = '${key}';
     let ready = false;
+    let programmatic = false;
+    let mapApi = null;
 
-    function emitLongPress(plat, plng) {
-      const payload = { type: 'appnavi:map-longpress', lat: plat, lng: plng };
+    function emit(payload) {
       try {
         if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
           window.ReactNativeWebView.postMessage(JSON.stringify(payload));
@@ -107,6 +158,43 @@ function buildMapPage(opts: {
         }
       } catch (e) {}
     }
+
+    function emitLongPress(plat, plng) {
+      emit({ type: 'appnavi:map-longpress', lat: plat, lng: plng });
+    }
+
+    function emitInteract() {
+      if (programmatic) return;
+      emit({ type: 'appnavi:map-interact' });
+    }
+
+    function emitReady() {
+      emit({ type: 'appnavi:map-ready' });
+    }
+
+    function withProgrammatic(fn) {
+      programmatic = true;
+      try { fn(); } finally {
+        setTimeout(function() { programmatic = false; }, 80);
+      }
+    }
+
+    function meHtml() {
+      return '<div class="me-wrap"><div class="me-pulse"></div><div class="me-dot"></div><div class="me-arrow"></div></div>';
+    }
+
+    function applyHeading(el, heading) {
+      if (!el) return;
+      if (heading == null || !Number.isFinite(heading) || heading < 0) {
+        el.classList.remove('has-heading');
+        el.style.transform = '';
+        return;
+      }
+      el.classList.add('has-heading');
+      el.style.transform = 'rotate(' + heading + 'deg)';
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
 
     function bindDomLongPress(getLatLng) {
       const el = document.getElementById('map');
@@ -186,6 +274,34 @@ function buildMapPage(opts: {
         + '</div>';
     }
 
+    function onHostMessage(event) {
+      const data = event && event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type !== 'appnavi:map-cmd' || !mapApi) return;
+      const cmd = data.cmd;
+      if (cmd === 'setUserLocation') {
+        const heading = data.heading == null ? null : Number(data.heading);
+        mapApi.setUserLocation(
+          Number(data.lat),
+          Number(data.lng),
+          !!data.center,
+          heading != null && Number.isFinite(heading) ? heading : null
+        );
+      } else if (cmd === 'setCenter') {
+        mapApi.setCenter(Number(data.lat), Number(data.lng));
+      } else if (cmd === 'setFocus') {
+        mapApi.setFocus(
+          data.lat == null ? null : Number(data.lat),
+          data.lng == null ? null : Number(data.lng)
+        );
+      } else if (cmd === 'setMarkers' && Array.isArray(data.markers)) {
+        mapApi.setMarkers(data.markers);
+      }
+    }
+
+    window.addEventListener('message', onHostMessage);
+    document.addEventListener('message', onHostMessage);
+
     function showLeaflet(note) {
       if (ready) return;
       ready = true;
@@ -195,18 +311,72 @@ function buildMapPage(opts: {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
       }).addTo(map);
-      L.marker([lat, lng]).addTo(map).bindPopup('기준 위치');
-      markers.forEach(function(m) {
-        const s = spotStyle(m);
-        const size = Math.max(20, s.radius * 2);
-        const icon = L.divIcon({
-          className: 'spot-icon',
-          html: spotHtml(m),
-          iconSize: [size, size + 16],
-          iconAnchor: [size / 2, size / 2]
+
+      let focusMarker = null;
+      let userMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          className: 'me-icon',
+          html: meHtml(),
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        }),
+        zIndexOffset: 1000,
+        interactive: false
+      }).addTo(map);
+      let animFrame = null;
+      let animFrom = { lat: lat, lng: lng };
+      let animTo = { lat: lat, lng: lng };
+
+      function meEl() {
+        const root = userMarker.getElement();
+        return root ? root.querySelector('.me-wrap') : null;
+      }
+
+      function animateUserTo(plat, plng, centerMap, heading) {
+        if (animFrame) cancelAnimationFrame(animFrame);
+        const cur = userMarker.getLatLng();
+        animFrom = { lat: cur.lat, lng: cur.lng };
+        animTo = { lat: plat, lng: plng };
+        const start = performance.now();
+        const dur = 280;
+        applyHeading(meEl(), heading);
+        function step(now) {
+          const t = Math.min(1, (now - start) / dur);
+          const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+          const nextLat = lerp(animFrom.lat, animTo.lat, ease);
+          const nextLng = lerp(animFrom.lng, animTo.lng, ease);
+          userMarker.setLatLng([nextLat, nextLng]);
+          if (centerMap) {
+            withProgrammatic(function() {
+              map.panTo([nextLat, nextLng], { animate: false });
+            });
+          }
+          if (t < 1) animFrame = requestAnimationFrame(step);
+          else animFrame = null;
+        }
+        animFrame = requestAnimationFrame(step);
+      }
+
+      const spotLayer = L.layerGroup().addTo(map);
+
+      function renderSpots(list) {
+        spotLayer.clearLayers();
+        (list || []).forEach(function(m) {
+          const s = spotStyle(m);
+          const size = Math.max(20, s.radius * 2);
+          const icon = L.divIcon({
+            className: 'spot-icon',
+            html: spotHtml(m),
+            iconSize: [size, size + 16],
+            iconAnchor: [size / 2, size / 2]
+          });
+          L.marker([m.lat, m.lng], { icon: icon }).addTo(spotLayer).bindPopup(s.title);
         });
-        L.marker([m.lat, m.lng], { icon: icon }).addTo(map).bindPopup(s.title);
-      });
+      }
+      renderSpots(markers);
+
+      map.on('dragstart', emitInteract);
+      map.on('zoomstart', function() { if (!programmatic) emitInteract(); });
       map.on('contextmenu', function(e) {
         emitLongPress(e.latlng.lat, e.latlng.lng);
       });
@@ -214,15 +384,39 @@ function buildMapPage(opts: {
         const p = map.mouseEventToLatLng({ clientX: clientX, clientY: clientY });
         return p ? { lat: p.lat, lng: p.lng } : null;
       });
+
+      mapApi = {
+        setUserLocation: function(plat, plng, center, heading) {
+          if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+          animateUserTo(plat, plng, !!center, heading);
+        },
+        setCenter: function(plat, plng) {
+          if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+          withProgrammatic(function() { map.setView([plat, plng], map.getZoom(), { animate: true }); });
+        },
+        setFocus: function(plat, plng) {
+          if (focusMarker) {
+            map.removeLayer(focusMarker);
+            focusMarker = null;
+          }
+          if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+          focusMarker = L.marker([plat, plng]).addTo(map).bindPopup('조사 위치');
+        },
+        setMarkers: function(list) {
+          markers = list || [];
+          renderSpots(markers);
+        }
+      };
+
       if (note) {
         const el = document.getElementById('fallback');
         el.style.display = 'block';
         el.textContent = note;
       }
-      setTimeout(function() { map.invalidateSize(); }, 100);
+      setTimeout(function() { map.invalidateSize(); emitReady(); }, 100);
     }
 
-    function addKakaoSpot(map, m) {
+    function addKakaoSpot(map, m, bucket) {
       const s = spotStyle(m);
       const size = Math.max(20, s.radius * 2);
       const wrap = document.createElement('div');
@@ -235,7 +429,7 @@ function buildMapPage(opts: {
         iw.open(map, new kakao.maps.LatLng(m.lat, m.lng));
         setTimeout(function() { iw.close(); }, 2800);
       });
-      new kakao.maps.CustomOverlay({
+      const overlay = new kakao.maps.CustomOverlay({
         map: map,
         position: new kakao.maps.LatLng(m.lat, m.lng),
         content: el,
@@ -243,6 +437,7 @@ function buildMapPage(opts: {
         yAnchor: 0,
         zIndex: 3
       });
+      bucket.push(overlay);
     }
 
     function showKakao() {
@@ -260,8 +455,61 @@ function buildMapPage(opts: {
           const map = new kakao.maps.Map(document.getElementById('map'), { center: center, level: 4 });
           const zoomControl = new kakao.maps.ZoomControl();
           map.addControl(zoomControl, kakao.maps.ControlPosition.TOPRIGHT);
-          new kakao.maps.Marker({ map: map, position: center, title: '기준 위치' });
-          markers.forEach(function(m) { addKakaoSpot(map, m); });
+
+          let focusMarker = null;
+          let spotOverlays = [];
+          const meHost = document.createElement('div');
+          meHost.innerHTML = meHtml();
+          const meWrap = meHost.firstChild;
+          meHost.style.marginLeft = '-14px';
+          meHost.style.marginTop = '-14px';
+          const userOverlay = new kakao.maps.CustomOverlay({
+            map: map,
+            position: center,
+            content: meHost,
+            xAnchor: 0,
+            yAnchor: 0,
+            zIndex: 10
+          });
+          let animFrame = null;
+          let animFrom = { lat: lat, lng: lng };
+          let animTo = { lat: lat, lng: lng };
+
+          function animateUserTo(plat, plng, centerMap, heading) {
+            if (animFrame) cancelAnimationFrame(animFrame);
+            const cur = userOverlay.getPosition();
+            animFrom = { lat: cur.getLat(), lng: cur.getLng() };
+            animTo = { lat: plat, lng: plng };
+            const start = performance.now();
+            const dur = 280;
+            applyHeading(meWrap, heading);
+            function step(now) {
+              const t = Math.min(1, (now - start) / dur);
+              const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+              const nextLat = lerp(animFrom.lat, animTo.lat, ease);
+              const nextLng = lerp(animFrom.lng, animTo.lng, ease);
+              const ll = new kakao.maps.LatLng(nextLat, nextLng);
+              userOverlay.setPosition(ll);
+              if (centerMap) {
+                withProgrammatic(function() { map.setCenter(ll); });
+              }
+              if (t < 1) animFrame = requestAnimationFrame(step);
+              else animFrame = null;
+            }
+            animFrame = requestAnimationFrame(step);
+          }
+
+          function renderSpots(list) {
+            spotOverlays.forEach(function(o) { o.setMap(null); });
+            spotOverlays = [];
+            (list || []).forEach(function(m) { addKakaoSpot(map, m, spotOverlays); });
+          }
+          renderSpots(markers);
+
+          kakao.maps.event.addListener(map, 'dragstart', emitInteract);
+          kakao.maps.event.addListener(map, 'zoom_start', function() {
+            if (!programmatic) emitInteract();
+          });
           kakao.maps.event.addListener(map, 'rightclick', function(mouseEvent) {
             const ll = mouseEvent.latLng;
             emitLongPress(ll.getLat(), ll.getLng());
@@ -269,8 +517,6 @@ function buildMapPage(opts: {
           bindDomLongPress(function(clientX, clientY) {
             const projection = map.getProjection();
             if (!projection) return null;
-            const point = new kakao.maps.Point(clientX, clientY);
-            // container coords → latlng via rel to map container
             const rect = document.getElementById('map').getBoundingClientRect();
             const x = clientX - rect.left;
             const y = clientY - rect.top;
@@ -278,9 +524,39 @@ function buildMapPage(opts: {
               ? map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(x, y))
               : null;
             if (coords) return { lat: coords.getLat(), lng: coords.getLng() };
-            // fallback: approximate with center if projection helper missing
             return { lat: map.getCenter().getLat(), lng: map.getCenter().getLng() };
           });
+
+          mapApi = {
+            setUserLocation: function(plat, plng, centerMap, heading) {
+              if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+              animateUserTo(plat, plng, !!centerMap, heading);
+            },
+            setCenter: function(plat, plng) {
+              if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+              withProgrammatic(function() {
+                map.setCenter(new kakao.maps.LatLng(plat, plng));
+              });
+            },
+            setFocus: function(plat, plng) {
+              if (focusMarker) {
+                focusMarker.setMap(null);
+                focusMarker = null;
+              }
+              if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+              focusMarker = new kakao.maps.Marker({
+                map: map,
+                position: new kakao.maps.LatLng(plat, plng),
+                title: '조사 위치'
+              });
+            },
+            setMarkers: function(list) {
+              markers = list || [];
+              renderSpots(markers);
+            }
+          };
+
+          emitReady();
         });
       };
       script.onerror = function() {

@@ -1,13 +1,15 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import type { ReverseGeocodeResult } from '../types';
+import type { NearbySearchSettings, ReverseGeocodeResult } from '../types';
+import { formatRadiusLabel } from '../services/nearbySettings';
 
 interface AddressCardProps {
   address: ReverseGeocodeResult | null;
   loading?: boolean;
+  searchSettings?: NearbySearchSettings | null;
 }
 
-export function AddressCard({ address, loading }: AddressCardProps) {
+export function AddressCard({ address, loading, searchSettings }: AddressCardProps) {
   if (loading && !address) {
     return (
       <View style={styles.card}>
@@ -22,10 +24,15 @@ export function AddressCard({ address, loading }: AddressCardProps) {
 
   const primary = address.roadAddress ?? address.jibunAddress ?? '주소 없음';
   const detail = [address.region1, address.region2, address.region3].filter(Boolean).join(' ');
-  const scope =
+  const sigungu =
     address.sigunguLabel ??
     [address.region1, address.region2].filter(Boolean).join(' ') ??
     address.lawdCd;
+  const radiusMode = searchSettings?.scope === 'radius';
+  const scopeText = radiusMode
+    ? `내 위치 반경 ${formatRadiusLabel(searchSettings.radiusKm)}`
+    : sigungu;
+  const scopeHint = radiusMode ? ' (반경)' : ' (구·시·군)';
 
   return (
     <View style={styles.card}>
@@ -33,8 +40,8 @@ export function AddressCard({ address, loading }: AddressCardProps) {
       <Text style={styles.address}>{primary}</Text>
       <Text style={styles.meta}>{detail}</Text>
       <Text style={styles.scope}>
-        시세 조사 범위 · {scope}
-        <Text style={styles.scopeHint}> (구·시·군)</Text>
+        시세 조사 범위 · {scopeText}
+        <Text style={styles.scopeHint}>{scopeHint}</Text>
       </Text>
       <Text style={styles.meta}>
         시군구코드 {address.lawdCd}
