@@ -260,6 +260,8 @@ export function FullscreenTextCardOverlay({ enabled, narration }: OverlayProps) 
           { opacity, transform: [{ translateY }] },
         ]}
       >
+        <Text style={styles.topRank}>Top{card.rank}</Text>
+
         <View style={styles.titleRow}>
           <Text style={styles.name} numberOfLines={2}>
             {card.name}
@@ -332,14 +334,14 @@ const styles = StyleSheet.create({
     zIndex: 20,
     justifyContent: 'center',
     paddingHorizontal: 18,
-    paddingVertical: 72,
   },
   card: {
-    flex: 1,
-    maxHeight: '100%',
+    height: '80%',
+    maxHeight: '80%',
+    alignSelf: 'stretch',
     borderRadius: 22,
     paddingHorizontal: 22,
-    paddingVertical: 28,
+    paddingVertical: 24,
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.18)',
@@ -355,6 +357,13 @@ const styles = StyleSheet.create({
   },
   toneFlat: {
     backgroundColor: 'rgba(26, 35, 50, 0.92)',
+  },
+  topRank: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginBottom: 14,
   },
   titleRow: {
     flexDirection: 'row',
