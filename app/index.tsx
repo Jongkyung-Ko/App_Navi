@@ -631,7 +631,7 @@ export default function HomeScreen() {
   const radiusCenterLng =
     nearbySettings.scope === 'radius' ? (mapFocus?.lng ?? userLoc?.lng ?? null) : null;
 
-  const mapOverlayControls = (
+  const mapOverlayControls = (opts?: { showExpand?: boolean }) => (
     <>
       <View style={styles.mapAreaChips} pointerEvents="box-none">
         <AreaBandChips
@@ -668,18 +668,29 @@ export default function HomeScreen() {
           </Text>
         </Pressable>
       </View>
-      <Pressable
-        accessibilityLabel="현재 위치로 이동"
-        style={[
-          styles.locateBtn,
-          !followUser && styles.locateBtnActive,
-          investigating && styles.locateBtnDisabled,
-        ]}
-        disabled={investigating}
-        onPress={() => void goToMyLocation()}
-      >
-        <Text style={styles.locateBtnGlyph}>◎</Text>
-      </Pressable>
+      <View style={styles.mapBottomLeft} pointerEvents="box-none">
+        <Pressable
+          accessibilityLabel="현재 위치로 이동"
+          style={[
+            styles.mapIconBtn,
+            !followUser && styles.locateBtnActive,
+            investigating && styles.locateBtnDisabled,
+          ]}
+          disabled={investigating}
+          onPress={() => void goToMyLocation()}
+        >
+          <Text style={styles.mapIconGlyph}>◎</Text>
+        </Pressable>
+        {opts?.showExpand ? (
+          <Pressable
+            accessibilityLabel="맵 전체보기"
+            style={styles.mapIconBtn}
+            onPress={openMapFullscreen}
+          >
+            <Text style={styles.mapIconGlyph}>⤢</Text>
+          </Pressable>
+        ) : null}
+      </View>
       {investigating || (listLoading && usingMapFocus) ? (
         <View style={styles.mapBusy}>
           <Text style={styles.mapBusyText}>이 위치 시세 조회 중…</Text>
@@ -752,16 +763,7 @@ export default function HomeScreen() {
             <Text style={styles.mapPlaceholderText}>맵 전체보기 중</Text>
           </View>
         )}
-        {!mapFullscreen ? mapOverlayControls : null}
-        {!mapFullscreen ? (
-          <Pressable
-            accessibilityLabel="맵 전체보기"
-            style={styles.fullscreenBtn}
-            onPress={openMapFullscreen}
-          >
-            <Text style={styles.fullscreenBtnText}>전체보기</Text>
-          </Pressable>
-        ) : null}
+        {!mapFullscreen ? mapOverlayControls({ showExpand: true }) : null}
       </View>
 
       <Modal
@@ -809,7 +811,7 @@ export default function HomeScreen() {
               onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
               onUserInteract={onMapUserInteract}
             />
-            {mapOverlayControls}
+            {mapOverlayControls({ showExpand: false })}
             <FullscreenTextCardOverlay
               enabled={textCardsOn}
               narration={narration}
@@ -1003,26 +1005,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#5c6670',
   },
-  fullscreenBtn: {
-    position: 'absolute',
-    right: 10,
-    bottom: 14,
-    zIndex: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: 'rgba(26, 35, 50, 0.92)',
-    shadowColor: '#000',
-    shadowOpacity: 0.14,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
-  },
-  fullscreenBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
   fullscreenRoot: {
     flex: 1,
     backgroundColor: '#1a2332',
@@ -1063,9 +1045,9 @@ const styles = StyleSheet.create({
   },
   fullscreenNarration: {
     position: 'absolute',
-    left: 56,
+    left: 10,
     right: 12,
-    bottom: 14,
+    bottom: 62,
     zIndex: 8,
     alignItems: 'flex-start',
   },
@@ -1098,7 +1080,7 @@ const styles = StyleSheet.create({
   mapAreaChips: {
     position: 'absolute',
     left: 8,
-    right: 120,
+    right: 118,
     top: 8,
     zIndex: 6,
   },
@@ -1134,17 +1116,27 @@ const styles = StyleSheet.create({
   mapMetricChipTextOn: {
     color: '#fff',
   },
-  locateBtn: {
+  mapBottomLeft: {
     position: 'absolute',
     left: 10,
     bottom: 14,
-    zIndex: 5,
+    zIndex: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mapIconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(26, 35, 50, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
   },
   locateBtnActive: {
     backgroundColor: 'rgba(37, 99, 235, 0.95)',
@@ -1152,16 +1144,17 @@ const styles = StyleSheet.create({
   locateBtnDisabled: {
     opacity: 0.5,
   },
-  locateBtnGlyph: {
+  mapIconGlyph: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
+    lineHeight: 20,
   },
   mapBusy: {
     position: 'absolute',
-    left: 56,
-    right: 56,
-    top: 12,
+    left: 16,
+    right: 16,
+    bottom: 64,
     alignItems: 'center',
     zIndex: 5,
   },
@@ -1174,6 +1167,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     textAlign: 'center',
+    overflow: 'hidden',
   },
   focusHint: {
     marginHorizontal: 16,
