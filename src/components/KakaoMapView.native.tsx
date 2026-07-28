@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { API_BASE_URL } from '../services/api';
@@ -15,6 +15,8 @@ interface KakaoMapViewProps {
   heatPoints?: HeatPoint[];
   mapPriceMode?: MapPriceMode;
   height?: number;
+  style?: StyleProp<ViewStyle>;
+  markerLimit?: number;
   userLat?: number | null;
   userLng?: number | null;
   userHeading?: number | null;
@@ -50,6 +52,20 @@ type MapCmd =
       lng?: number | null;
     };
 
+function serializeMarkers(list: MarkerPoint[], limit: number) {
+  return list.slice(0, limit).map((m) => ({
+    lat: m.lat,
+    lng: m.lng,
+    title: m.title ?? '',
+    radius: m.radius,
+    fillColor: m.fillColor,
+    strokeColor: m.strokeColor,
+    priceLabel: m.priceLabel ?? '',
+    changeLabel: m.changeLabel ?? '',
+    changeTone: m.changeTone ?? 'flat',
+  }));
+}
+
 /** iOS / Android: WebView loads server map-embed (Kakao + OSM fallback). */
 export function KakaoMapView({
   lat,
@@ -58,6 +74,8 @@ export function KakaoMapView({
   heatPoints = [],
   mapPriceMode = 'sale',
   height = 320,
+  style,
+  markerLimit = 20,
   userLat = null,
   userLng = null,
   userHeading = null,
@@ -89,6 +107,7 @@ export function KakaoMapView({
     markers,
     heatPoints,
     mapPriceMode,
+    markerLimit,
     radiusMeters,
     radiusCenterLat,
     radiusCenterLng,
@@ -102,12 +121,13 @@ export function KakaoMapView({
     markers,
     heatPoints,
     mapPriceMode,
+    markerLimit,
     radiusMeters,
     radiusCenterLat,
     radiusCenterLng,
   };
 
-  const initial = useRef({ lat, lng, markers });
+  const initial = useRef({ lat, lng, markers, markerLimit });
   const uri = useMemo(() => {
     const params = new URLSearchParams({
       lat: String(initial.current.lat),
@@ -116,17 +136,7 @@ export function KakaoMapView({
     if (initial.current.markers.length > 0) {
       params.set(
         'markers',
-        JSON.stringify(
-          initial.current.markers.slice(0, 20).map((m) => ({
-            lat: m.lat,
-            lng: m.lng,
-            title: m.title ?? '',
-            radius: m.radius,
-            fillColor: m.fillColor,
-            strokeColor: m.strokeColor,
-            priceLabel: m.priceLabel ?? '',
-          })),
-        ),
+        JSON.stringify(serializeMarkers(initial.current.markers, initial.current.markerLimit)),
       );
     }
     return `${API_BASE_URL}/map-embed?${params.toString()}`;
@@ -159,7 +169,7 @@ export function KakaoMapView({
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setMarkers',
-      markers: p.mapPriceMode === 'sale' ? p.markers.slice(0, 20) : [],
+      markers: p.mapPriceMode === 'sale' ? serializeMarkers(p.markers, p.markerLimit) : [],
     });
     postCmd({
       type: 'appnavi:map-cmd',
@@ -232,14 +242,14 @@ export function KakaoMapView({
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setMarkers',
-      markers: mapPriceMode === 'sale' ? markers.slice(0, 20) : [],
+      markers: mapPriceMode === 'sale' ? serializeMarkers(markers, markerLimit) : [],
     });
     postCmd({
       type: 'appnavi:map-cmd',
       cmd: 'setHeatLayer',
       points: mapPriceMode === 'pyeong' ? heatPoints.slice(0, 80) : [],
     });
-  }, [markers, heatPoints, mapPriceMode]);
+  }, [markers, heatPoints, mapPriceMode, markerLimit]);
 
   useEffect(() => {
     postCmd({
@@ -255,7 +265,7 @@ export function KakaoMapView({
   }, [radiusMeters, radiusCenterLat, radiusCenterLng]);
 
   return (
-    <View style={[styles.wrap, { height }]}>
+    <View style={[styles.wrap, height != null ? { height } : null, style]}>
       <WebView
         ref={webRef}
         originWhitelist={['*']}

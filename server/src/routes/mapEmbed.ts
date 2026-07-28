@@ -8,6 +8,8 @@ interface MarkerPoint {
   fillColor?: string;
   strokeColor?: string;
   priceLabel?: string;
+  changeLabel?: string;
+  changeTone?: 'up' | 'down' | 'flat';
 }
 
 function escapeJs(value: string): string {
@@ -63,17 +65,27 @@ function buildMapPage(opts: {
     }
     .spot-label {
       margin-top: 2px;
-      padding: 1px 5px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.94);
-      color: #1a2332;
-      font: 700 10px/1.2 sans-serif;
-      white-space: nowrap;
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.96);
       box-shadow: 0 1px 3px rgba(0,0,0,.18);
-      max-width: 72px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      max-width: 92px;
+      white-space: nowrap;
     }
+    .spot-price {
+      color: #1a2332;
+      font: 700 10px/1.15 sans-serif;
+    }
+    .spot-change {
+      font: 700 9px/1.1 sans-serif;
+    }
+    .spot-change.up { color: #c0392b; }
+    .spot-change.down { color: #1f6f4a; }
+    .spot-change.flat { color: #5c6670; }
     .me-wrap {
       width: 28px;
       height: 28px;
@@ -256,23 +268,34 @@ function buildMapPage(opts: {
     }
 
     function spotStyle(m) {
+      const tone = m.changeTone === 'up' || m.changeTone === 'down' ? m.changeTone : 'flat';
       return {
         radius: Number(m.radius) > 0 ? Number(m.radius) : 10,
         fillColor: m.fillColor || 'rgba(234,88,12,0.55)',
         strokeColor: m.strokeColor || 'rgba(194,65,12,0.9)',
         title: m.title || '',
-        priceLabel: m.priceLabel || ''
+        priceLabel: m.priceLabel || '',
+        changeLabel: m.changeLabel || '',
+        changeTone: tone
       };
     }
 
     function spotHtml(m) {
       const s = spotStyle(m);
       const size = Math.max(20, s.radius * 2);
-      const label = escapeHtml(s.priceLabel);
+      const price = escapeHtml(s.priceLabel);
+      const change = escapeHtml(s.changeLabel);
+      let label = '';
+      if (price || change) {
+        label = '<div class="spot-label">'
+          + (price ? '<span class="spot-price">' + price + '</span>' : '')
+          + (change ? '<span class="spot-change ' + s.changeTone + '">' + change + '</span>' : '')
+          + '</div>';
+      }
       return '<div class="spot-wrap">'
         + '<div class="spot" style="width:' + size + 'px;height:' + size + 'px;'
         + 'background:' + s.fillColor + ';border-color:' + s.strokeColor + '"></div>'
-        + (label ? '<div class="spot-label">' + label + '</div>' : '')
+        + label
         + '</div>';
     }
 

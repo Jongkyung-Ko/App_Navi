@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
@@ -65,6 +67,7 @@ const MAP_IDLE_RETURN_MS = 15_000;
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { location, address, loading, error, refresh } = useCurrentLocation();
   const { settings: nearbySettings, ready: nearbySettingsReady, update: updateNearbySettings } =
     useNearbySettings();
@@ -90,6 +93,8 @@ export default function HomeScreen() {
   const [liveLocation, setLiveLocation] = useState<UserLocation | null>(null);
   /** Keep map centered on GPS until the user pans (or investigates prices). */
   const [followUser, setFollowUser] = useState(true);
+  /** Expand map to fullscreen while keeping home narration state alive. */
+  const [mapFullscreen, setMapFullscreen] = useState(false);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
@@ -584,7 +589,7 @@ export default function HomeScreen() {
     areaTarget !== undefined ? formatAreaBandLabel(areaTarget) : '전체 면적';
   const searchScopeLabel = scopeLabel(nearbySettings);
 
-  const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 20), [complexes]);
+  const mapMarkers = useMemo(() => buildStyledMapMarkers(complexes, 60), [complexes]);
   const mapHeatPoints = useMemo(() => buildPyeongHeatPoints(complexes, 60), [complexes]);
   const rankedList = useMemo(() => sortBySalePriceDesc(complexes).slice(0, 8), [complexes]);
 
@@ -599,6 +604,84 @@ export default function HomeScreen() {
     activeAddress?.lng ??
     126.978;
   const usingMapFocus = mapFocus !== null;
+  const mapMarkerLimit = mapFullscreen ? 60 : 20;
+  const fullscreenMapHeight = Math.max(
+    320,
+    windowHeight - insets.top - insets.bottom - 52,
+  );
+
+  const openMapFullscreen = useCallback(() => {
+    setMapPriceMode('sale');
+    setMapFullscreen(true);
+  }, []);
+
+  const closeMapFullscreen = useCallback(() => {
+    setMapFullscreen(false);
+  }, []);
+
+  const radiusMeters =
+    nearbySettings.scope === 'radius' ? nearbySettings.radiusKm * 1000 : null;
+  const radiusCenterLat =
+    nearbySettings.scope === 'radius' ? (mapFocus?.lat ?? userLoc?.lat ?? null) : null;
+  const radiusCenterLng =
+    nearbySettings.scope === 'radius' ? (mapFocus?.lng ?? userLoc?.lng ?? null) : null;
+
+  const mapOverlayControls = (
+    <>
+      <View style={styles.mapAreaChips} pointerEvents="box-none">
+        <AreaBandChips
+          overlay
+          value={areaTarget}
+          onChange={onChangeAreaTarget}
+          availableTargets={availableAreaTargets}
+        />
+      </View>
+      <View style={styles.mapMetricToggle} pointerEvents="box-none">
+        <Pressable
+          accessibilityLabel="시세로 보기"
+          onPress={() => setMapPriceMode('sale')}
+          style={[styles.mapMetricChip, mapPriceMode === 'sale' && styles.mapMetricChipOn]}
+        >
+          <Text
+            style={[styles.mapMetricChipText, mapPriceMode === 'sale' && styles.mapMetricChipTextOn]}
+          >
+            시세
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="평단가로 보기"
+          onPress={() => setMapPriceMode('pyeong')}
+          style={[styles.mapMetricChip, mapPriceMode === 'pyeong' && styles.mapMetricChipOn]}
+        >
+          <Text
+            style={[
+              styles.mapMetricChipText,
+              mapPriceMode === 'pyeong' && styles.mapMetricChipTextOn,
+            ]}
+          >
+            평단가
+          </Text>
+        </Pressable>
+      </View>
+      <Pressable
+        accessibilityLabel="현재 위치로 이동"
+        style={[
+          styles.locateBtn,
+          !followUser && styles.locateBtnActive,
+          investigating && styles.locateBtnDisabled,
+        ]}
+        disabled={investigating}
+        onPress={() => void goToMyLocation()}
+      >
+        <Text style={styles.locateBtnGlyph}>◎</Text>
+      </Pressable>
+      {investigating || (listLoading && usingMapFocus) ? (
+        <View style={styles.mapBusy}>
+          <Text style={styles.mapBusyText}>이 위치 시세 조회 중…</Text>
+        </View>
+      ) : null}
+    </>
+  );
 
   const moveHint = moveWatchOn
     ? moveStatus ?? '100m 이동 또는 30초마다 Top 3 변동을 확인합니다'
@@ -637,89 +720,98 @@ export default function HomeScreen() {
       />
 
       <View style={styles.mapShell}>
-        <KakaoMapView
-          lat={lat}
-          lng={lng}
-          jsKey={jsKey}
-          markers={mapMarkers}
-          heatPoints={mapHeatPoints}
-          mapPriceMode={mapPriceMode}
-          height={360}
-          userLat={userLoc?.lat ?? null}
-          userLng={userLoc?.lng ?? null}
-          userHeading={userLoc?.heading ?? null}
-          followUser={followUser && !usingMapFocus}
-          focusLat={mapFocus?.lat ?? null}
-          focusLng={mapFocus?.lng ?? null}
-          radiusMeters={
-            nearbySettings.scope === 'radius' ? nearbySettings.radiusKm * 1000 : null
-          }
-          radiusCenterLat={
-            nearbySettings.scope === 'radius'
-              ? (mapFocus?.lat ?? userLoc?.lat ?? null)
-              : null
-          }
-          radiusCenterLng={
-            nearbySettings.scope === 'radius'
-              ? (mapFocus?.lng ?? userLoc?.lng ?? null)
-              : null
-          }
-          onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
-          onUserInteract={onMapUserInteract}
-        />
-        <View style={styles.mapAreaChips} pointerEvents="box-none">
-          <AreaBandChips
-            overlay
-            value={areaTarget}
-            onChange={onChangeAreaTarget}
-            availableTargets={availableAreaTargets}
+        {!mapFullscreen ? (
+          <KakaoMapView
+            lat={lat}
+            lng={lng}
+            jsKey={jsKey}
+            markers={mapMarkers}
+            heatPoints={mapHeatPoints}
+            mapPriceMode={mapPriceMode}
+            markerLimit={mapMarkerLimit}
+            height={360}
+            userLat={userLoc?.lat ?? null}
+            userLng={userLoc?.lng ?? null}
+            userHeading={userLoc?.heading ?? null}
+            followUser={followUser && !usingMapFocus}
+            focusLat={mapFocus?.lat ?? null}
+            focusLng={mapFocus?.lng ?? null}
+            radiusMeters={radiusMeters}
+            radiusCenterLat={radiusCenterLat}
+            radiusCenterLng={radiusCenterLng}
+            onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
+            onUserInteract={onMapUserInteract}
           />
-        </View>
-        <View style={styles.mapMetricToggle} pointerEvents="box-none">
-          <Pressable
-            accessibilityLabel="시세로 보기"
-            onPress={() => setMapPriceMode('sale')}
-            style={[styles.mapMetricChip, mapPriceMode === 'sale' && styles.mapMetricChipOn]}
-          >
-            <Text
-              style={[styles.mapMetricChipText, mapPriceMode === 'sale' && styles.mapMetricChipTextOn]}
-            >
-              시세
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityLabel="평단가로 보기"
-            onPress={() => setMapPriceMode('pyeong')}
-            style={[styles.mapMetricChip, mapPriceMode === 'pyeong' && styles.mapMetricChipOn]}
-          >
-            <Text
-              style={[
-                styles.mapMetricChipText,
-                mapPriceMode === 'pyeong' && styles.mapMetricChipTextOn,
-              ]}
-            >
-              평단가
-            </Text>
-          </Pressable>
-        </View>
-        <Pressable
-          accessibilityLabel="현재 위치로 이동"
-          style={[
-            styles.locateBtn,
-            !followUser && styles.locateBtnActive,
-            investigating && styles.locateBtnDisabled,
-          ]}
-          disabled={investigating}
-          onPress={() => void goToMyLocation()}
-        >
-          <Text style={styles.locateBtnGlyph}>◎</Text>
-        </Pressable>
-        {investigating || (listLoading && usingMapFocus) ? (
-          <View style={styles.mapBusy}>
-            <Text style={styles.mapBusyText}>이 위치 시세 조회 중…</Text>
+        ) : (
+          <View style={styles.mapPlaceholder}>
+            <Text style={styles.mapPlaceholderText}>맵 전체보기 중</Text>
           </View>
+        )}
+        {!mapFullscreen ? mapOverlayControls : null}
+        {!mapFullscreen ? (
+          <Pressable
+            accessibilityLabel="맵 전체보기"
+            style={styles.fullscreenBtn}
+            onPress={openMapFullscreen}
+          >
+            <Text style={styles.fullscreenBtnText}>전체보기</Text>
+          </Pressable>
         ) : null}
       </View>
+
+      <Modal
+        visible={mapFullscreen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={closeMapFullscreen}
+      >
+        <View style={[styles.fullscreenRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+          <View style={styles.fullscreenHeader}>
+            <Text style={styles.fullscreenTitle}>맵 전체보기</Text>
+            <Pressable
+              accessibilityLabel="맵 전체보기 닫기"
+              onPress={closeMapFullscreen}
+              style={styles.fullscreenCloseBtn}
+            >
+              <Text style={styles.fullscreenCloseText}>닫기</Text>
+            </Pressable>
+          </View>
+          <View style={styles.fullscreenMapShell}>
+            <KakaoMapView
+              lat={lat}
+              lng={lng}
+              jsKey={jsKey}
+              markers={mapMarkers}
+              heatPoints={mapHeatPoints}
+              mapPriceMode={mapPriceMode}
+              markerLimit={mapMarkerLimit}
+              height={fullscreenMapHeight}
+              style={styles.fullscreenMap}
+              userLat={userLoc?.lat ?? null}
+              userLng={userLoc?.lng ?? null}
+              userHeading={userLoc?.heading ?? null}
+              followUser={followUser && !usingMapFocus}
+              focusLat={mapFocus?.lat ?? null}
+              focusLng={mapFocus?.lng ?? null}
+              radiusMeters={radiusMeters}
+              radiusCenterLat={radiusCenterLat}
+              radiusCenterLng={radiusCenterLng}
+              onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
+              onUserInteract={onMapUserInteract}
+            />
+            {mapOverlayControls}
+            {narrationOn ? (
+              <View style={styles.fullscreenNarration} pointerEvents="none">
+                <Text style={styles.fullscreenNarrationText}>
+                  {speaking
+                    ? `나레이션 · ${narrationSettingsHint(narrationSettings)} 읽는 중…`
+                    : `나레이션 On · ${narrationSettingsHint(narrationSettings)}`}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
 
       <AddressCard
         address={activeAddress}
@@ -883,6 +975,93 @@ const styles = StyleSheet.create({
   },
   mapShell: {
     position: 'relative',
+  },
+  mapPlaceholder: {
+    height: 360,
+    backgroundColor: '#e8eef4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#d5dbe3',
+  },
+  mapPlaceholderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#5c6670',
+  },
+  fullscreenBtn: {
+    position: 'absolute',
+    right: 10,
+    bottom: 14,
+    zIndex: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: 'rgba(26, 35, 50, 0.92)',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  fullscreenBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  fullscreenRoot: {
+    flex: 1,
+    backgroundColor: '#1a2332',
+  },
+  fullscreenHeader: {
+    height: 48,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fullscreenTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  fullscreenCloseBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  fullscreenCloseText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  fullscreenMapShell: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#e8eef4',
+    overflow: 'hidden',
+  },
+  fullscreenMap: {
+    borderBottomWidth: 0,
+  },
+  fullscreenNarration: {
+    position: 'absolute',
+    left: 56,
+    right: 12,
+    bottom: 14,
+    zIndex: 8,
+    alignItems: 'flex-start',
+  },
+  fullscreenNarrationText: {
+    backgroundColor: 'rgba(26, 35, 50, 0.88)',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   headerRight: {
     marginRight: 8,

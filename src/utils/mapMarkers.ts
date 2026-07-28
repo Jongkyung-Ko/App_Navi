@@ -12,8 +12,28 @@ export interface MarkerPoint {
   fillColor: string;
   strokeColor: string;
   priceLabel?: string;
+  /** Compact 등락률 text e.g. "+3.2%" / "—" */
+  changeLabel?: string;
+  changePercent?: number | null;
+  /** Color tone for changeLabel in map embed */
+  changeTone?: 'up' | 'down' | 'flat';
   tradeCount?: number;
   tier?: 'high' | 'mid' | 'low';
+}
+
+export function formatChangeLabel(changePercent: number | null | undefined): string {
+  if (changePercent == null || !Number.isFinite(changePercent)) return '—';
+  if (Math.abs(changePercent) < 0.05) return '0%';
+  return `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(1)}%`;
+}
+
+export function changeToneFor(
+  changePercent: number | null | undefined,
+): 'up' | 'down' | 'flat' {
+  if (changePercent == null || !Number.isFinite(changePercent) || Math.abs(changePercent) < 0.05) {
+    return 'flat';
+  }
+  return changePercent > 0 ? 'up' : 'down';
 }
 
 /** Soft heat blob for 평단가 mode (meters + 0..1 intensity). */
@@ -120,13 +140,17 @@ export function buildStyledMapMarkers(
       : 'low';
     const colors = TIER[tierName];
     const tradeCount = c.tradeCount || 0;
-    const avg = c.avgPrice > 0 ? c.avgPrice : c.medianPrice;
-    const priceLabel = formatManwonCompact(avg);
+    const priceLabel = formatManwonCompact(c.medianPrice);
+    const changeLabel = formatChangeLabel(c.changePercent);
+    const changeTone = changeToneFor(c.changePercent);
     return {
       lat: c.lat!,
       lng: c.lng!,
-      title: `${c.aptName} · ${priceLabel} · 거래 ${tradeCount}건`,
+      title: `${c.aptName} · ${priceLabel} · ${changeLabel} · 거래 ${tradeCount}건`,
       priceLabel,
+      changeLabel,
+      changePercent: c.changePercent,
+      changeTone,
       tradeCount,
       tier: tierName,
       radius: radiusForCount(tradeCount, minC, maxC),
