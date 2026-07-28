@@ -89,7 +89,13 @@ npm start
 npm test
 ```
 
-집계/중위가/평당가/증감률 단위 테스트 (`server/src/__tests__`).
+집계/중위가/평당가/증감률·대장지수 단위 테스트 (`server/src/__tests__`).
+
+## 분석 API (갭갭갭 등 읽기 전용 클라이언트용)
+
+- `GET /api/analysis/regions` — 서울 25구 · 광역시 구 목록
+- `GET /api/analysis/leader-index?lawdCd=11680&topN=10&years=3&surgeThreshold=3`
+  - 구별 대장 단지 TOP N, 월별 평균 중위가, 급등 구간
 
 ## EAS 빌드 (내부 테스트)
 
