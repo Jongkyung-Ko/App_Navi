@@ -1,5 +1,5 @@
 import type { ComplexSummary } from '../types';
-import { formatManwon } from './format';
+import { formatManwonCompact } from './format';
 
 export interface MarkerPoint {
   lat: number;
@@ -20,8 +20,8 @@ const TIER = {
   low: { fill: 'rgba(234, 179, 8, 0.55)', stroke: 'rgba(202, 138, 4, 0.9)' },
 } as const;
 
-const RADIUS_MIN = 7;
-const RADIUS_MAX = 20;
+const RADIUS_MIN = 10;
+const RADIUS_MAX = 22;
 const TOP_N = 10;
 
 function priceTertileThresholds(sortedAsc: number[]): { lowMax: number; midMax: number } {
@@ -77,7 +77,8 @@ export function buildStyledMapMarkers(
       : 'low';
     const colors = TIER[tierName];
     const tradeCount = c.tradeCount || 0;
-    const priceLabel = formatManwon(c.medianPrice);
+    const avg = c.avgPrice > 0 ? c.avgPrice : c.medianPrice;
+    const priceLabel = formatManwonCompact(avg);
     return {
       lat: c.lat!,
       lng: c.lng!,

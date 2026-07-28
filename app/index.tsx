@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddressCard } from '../src/components/AddressCard';
 import { AreaBandChips } from '../src/components/AreaBandChips';
@@ -450,18 +450,24 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#c45c26" />}
     >
-      <View style={styles.topBar}>
-        <View style={styles.topBarSpacer} />
-        <PwaInstallButton
-          compact
-          installed={pwa.isInstalled}
-          installing={pwa.installing}
-          onPress={() => {
-            pwa.clearMessage();
-            void pwa.install();
-          }}
-        />
-      </View>
+      <Stack.Screen
+        options={{
+          title: 'App Navi',
+          headerRight: () => (
+            <View style={styles.headerRight}>
+              <PwaInstallButton
+                compact
+                installed={pwa.isInstalled}
+                installing={pwa.installing}
+                onPress={() => {
+                  pwa.clearMessage();
+                  void pwa.install();
+                }}
+              />
+            </View>
+          ),
+        }}
+      />
 
       <View style={styles.mapShell}>
         <KakaoMapView
@@ -469,9 +475,17 @@ export default function HomeScreen() {
           lng={lng}
           jsKey={jsKey}
           markers={mapMarkers}
-          height={340}
+          height={360}
           onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
         />
+        <View style={styles.mapAreaChips} pointerEvents="box-none">
+          <AreaBandChips
+            overlay
+            value={areaTarget}
+            onChange={onChangeAreaTarget}
+            availableTargets={availableAreaTargets}
+          />
+        </View>
         <Pressable
           accessibilityLabel="현재 위치로 이동"
           style={[styles.locateBtn, investigating && styles.locateBtnDisabled]}
@@ -522,12 +536,6 @@ export default function HomeScreen() {
         disabled={!location && !address}
         onToggle={onToggleMoveWatch}
         activeColor="#1a2332"
-      />
-
-      <AreaBandChips
-        value={areaTarget}
-        onChange={onChangeAreaTarget}
-        availableTargets={availableAreaTargets}
       />
 
       {(narrationOn || moveWatchOn || showTop3Card) && narration.top3.length > 0 ? (
@@ -620,17 +628,16 @@ const styles = StyleSheet.create({
   mapShell: {
     position: 'relative',
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 6,
-    minHeight: 32,
+  headerRight: {
+    marginRight: 8,
+    justifyContent: 'center',
   },
-  topBarSpacer: {
-    flex: 1,
+  mapAreaChips: {
+    position: 'absolute',
+    left: 8,
+    right: 52,
+    top: 8,
+    zIndex: 6,
   },
   locateBtn: {
     position: 'absolute',

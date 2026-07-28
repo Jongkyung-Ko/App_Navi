@@ -7,6 +7,7 @@ interface MarkerPoint {
   radius?: number;
   fillColor?: string;
   strokeColor?: string;
+  priceLabel?: string;
 }
 
 function escapeJs(value: string): string {
@@ -44,11 +45,33 @@ function buildMapPage(opts: {
       background:rgba(255,255,255,.94); color:#5c6670; font:11px/1.35 sans-serif;
       padding:5px 10px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.12); pointer-events:none; }
     .leaflet-bottom.leaflet-right { margin-bottom: 4px; }
+    .spot-icon { background: transparent !important; border: none !important; }
+    .spot-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      pointer-events: auto;
+    }
     .spot {
       border-radius: 50%;
       box-sizing: border-box;
       box-shadow: 0 1px 4px rgba(0,0,0,.28);
-      cursor: pointer;
+      border: 2px solid rgba(0,0,0,.2);
+      flex: 0 0 auto;
+    }
+    .spot-label {
+      margin-top: 2px;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.94);
+      color: #1a2332;
+      font: 700 10px/1.2 sans-serif;
+      white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(0,0,0,.18);
+      max-width: 72px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   </style>
 </head>
@@ -134,13 +157,33 @@ function buildMapPage(opts: {
       });
     }
 
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
     function spotStyle(m) {
       return {
-        radius: Number(m.radius) > 0 ? Number(m.radius) : 8,
+        radius: Number(m.radius) > 0 ? Number(m.radius) : 10,
         fillColor: m.fillColor || 'rgba(234,88,12,0.55)',
         strokeColor: m.strokeColor || 'rgba(194,65,12,0.9)',
-        title: m.title || ''
+        title: m.title || '',
+        priceLabel: m.priceLabel || ''
       };
+    }
+
+    function spotHtml(m) {
+      const s = spotStyle(m);
+      const size = Math.max(20, s.radius * 2);
+      const label = escapeHtml(s.priceLabel);
+      return '<div class="spot-wrap">'
+        + '<div class="spot" style="width:' + size + 'px;height:' + size + 'px;'
+        + 'background:' + s.fillColor + ';border-color:' + s.strokeColor + '"></div>'
+        + (label ? '<div class="spot-label">' + label + '</div>' : '')
+        + '</div>';
     }
 
     function showLeaflet(note) {
@@ -155,13 +198,14 @@ function buildMapPage(opts: {
       L.marker([lat, lng]).addTo(map).bindPopup('기준 위치');
       markers.forEach(function(m) {
         const s = spotStyle(m);
-        L.circleMarker([m.lat, m.lng], {
-          radius: s.radius,
-          color: s.strokeColor,
-          weight: 2,
-          fillColor: s.fillColor,
-          fillOpacity: 1
-        }).addTo(map).bindPopup(s.title);
+        const size = Math.max(20, s.radius * 2);
+        const icon = L.divIcon({
+          className: 'spot-icon',
+          html: spotHtml(m),
+          iconSize: [size, size + 16],
+          iconAnchor: [size / 2, size / 2]
+        });
+        L.marker([m.lat, m.lng], { icon: icon }).addTo(map).bindPopup(s.title);
       });
       map.on('contextmenu', function(e) {
         emitLongPress(e.latlng.lat, e.latlng.lng);
@@ -180,18 +224,14 @@ function buildMapPage(opts: {
 
     function addKakaoSpot(map, m) {
       const s = spotStyle(m);
-      const size = Math.max(10, s.radius * 2);
-      const el = document.createElement('div');
-      el.className = 'spot';
-      el.title = s.title;
-      el.style.width = size + 'px';
-      el.style.height = size + 'px';
+      const size = Math.max(20, s.radius * 2);
+      const wrap = document.createElement('div');
+      wrap.innerHTML = spotHtml(m);
+      const el = wrap.firstChild;
       el.style.marginLeft = (-size / 2) + 'px';
       el.style.marginTop = (-size / 2) + 'px';
-      el.style.background = s.fillColor;
-      el.style.border = '2px solid ' + s.strokeColor;
       el.addEventListener('click', function() {
-        const iw = new kakao.maps.InfoWindow({ content: '<div style="padding:6px 8px;font:12px sans-serif;">' + (s.title || '') + '</div>' });
+        const iw = new kakao.maps.InfoWindow({ content: '<div style="padding:6px 8px;font:12px sans-serif;">' + escapeHtml(s.title) + '</div>' });
         iw.open(map, new kakao.maps.LatLng(m.lat, m.lng));
         setTimeout(function() { iw.close(); }, 2800);
       });

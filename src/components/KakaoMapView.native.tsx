@@ -43,6 +43,7 @@ export function KakaoMapView({
             radius: m.radius,
             fillColor: m.fillColor,
             strokeColor: m.strokeColor,
+            priceLabel: m.priceLabel ?? '',
           })),
         ),
       );

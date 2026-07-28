@@ -11,6 +11,8 @@ type Props = {
   availableTargets?: number[];
   /** Drop outer horizontal padding when nested in an already-padded layout. */
   embedded?: boolean;
+  /** Compact chips for map overlay (no title/hint). */
+  overlay?: boolean;
 };
 
 export function AreaBandChips({
@@ -20,6 +22,7 @@ export function AreaBandChips({
   hint = '선택하면 매매·전세 시세와 10년 차트가 해당 면적만 보여줍니다.',
   availableTargets,
   embedded = false,
+  overlay = false,
 }: Props) {
   const presets =
     availableTargets && availableTargets.length > 0
@@ -29,9 +32,15 @@ export function AreaBandChips({
       : AREA_BAND_PRESETS;
 
   return (
-    <View style={[styles.wrap, embedded && styles.wrapEmbedded]}>
-      <Text style={styles.title}>{title}</Text>
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+    <View
+      style={[
+        styles.wrap,
+        embedded && styles.wrapEmbedded,
+        overlay && styles.wrapOverlay,
+      ]}
+    >
+      {!overlay ? <Text style={styles.title}>{title}</Text> : null}
+      {!overlay && hint ? <Text style={styles.hint}>{hint}</Text> : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -43,12 +52,16 @@ export function AreaBandChips({
             <Pressable
               key={preset.label}
               onPress={() => onChange(preset.value)}
-              style={[styles.chip, active && styles.chipActive]}
+              style={[
+                styles.chip,
+                overlay && styles.chipOverlay,
+                active && styles.chipActive,
+              ]}
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+              <Text style={[styles.chipText, overlay && styles.chipTextOverlay, active && styles.chipTextActive]}>
                 {preset.shortLabel}
               </Text>
-              {preset.value !== undefined ? (
+              {!overlay && preset.value !== undefined ? (
                 <Text style={[styles.chipSub, active && styles.chipSubActive]}>
                   약 {Math.round((preset.value / 3.3058) * 1.3)}평
                 </Text>
@@ -71,6 +84,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 0,
   },
+  wrapOverlay: {
+    marginTop: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 196, 176, 0.9)',
+  },
   title: {
     fontSize: 14,
     fontWeight: '800',
@@ -85,8 +107,8 @@ const styles = StyleSheet.create({
   },
   chips: {
     flexDirection: 'row',
-    gap: 8,
-    paddingRight: 8,
+    gap: 6,
+    paddingRight: 4,
   },
   chip: {
     paddingHorizontal: 12,
@@ -98,6 +120,13 @@ const styles = StyleSheet.create({
     minWidth: 64,
     alignItems: 'center',
   },
+  chipOverlay: {
+    minWidth: 48,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
   chipActive: {
     backgroundColor: '#1a2332',
     borderColor: '#1a2332',
@@ -106,6 +135,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#1a2332',
+  },
+  chipTextOverlay: {
+    fontSize: 12,
   },
   chipTextActive: {
     color: '#fff',
