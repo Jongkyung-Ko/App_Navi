@@ -21,8 +21,11 @@ interface KakaoMapViewProps {
   /** Investigated point marker; null clears it. */
   focusLat?: number | null;
   focusLng?: number | null;
-  /** Search radius in meters around my location; null/undefined hides the circle. */
+  /** Search radius in meters; null/undefined hides the circle. */
   radiusMeters?: number | null;
+  /** Circle center (investigate pin or my location). */
+  radiusCenterLat?: number | null;
+  radiusCenterLng?: number | null;
   onLongPressLocation?: (lat: number, lng: number) => void;
   /** Fired when the user pans/zooms the map. */
   onUserInteract?: () => void;
@@ -40,7 +43,13 @@ type MapCmd =
   | { type: 'appnavi:map-cmd'; cmd: 'setCenter'; lat: number; lng: number }
   | { type: 'appnavi:map-cmd'; cmd: 'setFocus'; lat: number | null; lng: number | null }
   | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] }
-  | { type: 'appnavi:map-cmd'; cmd: 'setRadiusCircle'; radiusM: number | null };
+  | {
+      type: 'appnavi:map-cmd';
+      cmd: 'setRadiusCircle';
+      radiusM: number | null;
+      lat?: number | null;
+      lng?: number | null;
+    };
 
 /**
  * Web map: load embed page from API server (proper origin for Kakao),
@@ -58,6 +67,8 @@ export function KakaoMapView({
   focusLat = null,
   focusLng = null,
   radiusMeters = null,
+  radiusCenterLat = null,
+  radiusCenterLng = null,
   onLongPressLocation,
   onUserInteract,
 }: KakaoMapViewProps) {
@@ -79,6 +90,8 @@ export function KakaoMapView({
     focusLng,
     markers,
     radiusMeters,
+    radiusCenterLat,
+    radiusCenterLng,
   });
   propsRef.current = {
     userLat,
@@ -88,6 +101,8 @@ export function KakaoMapView({
     focusLng,
     markers,
     radiusMeters,
+    radiusCenterLat,
+    radiusCenterLng,
   };
 
   // Stable initial URL — live updates go through postMessage.
@@ -157,6 +172,8 @@ export function KakaoMapView({
         p.radiusMeters != null && Number.isFinite(p.radiusMeters) && p.radiusMeters > 0
           ? p.radiusMeters
           : null,
+      lat: p.radiusCenterLat,
+      lng: p.radiusCenterLng,
     });
   };
 
@@ -226,8 +243,10 @@ export function KakaoMapView({
         radiusMeters != null && Number.isFinite(radiusMeters) && radiusMeters > 0
           ? radiusMeters
           : null,
+      lat: radiusCenterLat,
+      lng: radiusCenterLng,
     });
-  }, [radiusMeters]);
+  }, [radiusMeters, radiusCenterLat, radiusCenterLng]);
 
   return (
     <View style={[styles.wrap, { height }]}>

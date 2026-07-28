@@ -644,6 +644,16 @@ export default function HomeScreen() {
           radiusMeters={
             nearbySettings.scope === 'radius' ? nearbySettings.radiusKm * 1000 : null
           }
+          radiusCenterLat={
+            nearbySettings.scope === 'radius'
+              ? (mapFocus?.lat ?? userLoc?.lat ?? null)
+              : null
+          }
+          radiusCenterLng={
+            nearbySettings.scope === 'radius'
+              ? (mapFocus?.lng ?? userLoc?.lng ?? null)
+              : null
+          }
           onLongPressLocation={(plat, plng) => void investigateAt(plat, plng)}
           onUserInteract={onMapUserInteract}
         />

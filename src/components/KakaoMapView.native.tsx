@@ -20,6 +20,8 @@ interface KakaoMapViewProps {
   focusLat?: number | null;
   focusLng?: number | null;
   radiusMeters?: number | null;
+  radiusCenterLat?: number | null;
+  radiusCenterLng?: number | null;
   onLongPressLocation?: (lat: number, lng: number) => void;
   onUserInteract?: () => void;
 }
@@ -36,7 +38,13 @@ type MapCmd =
   | { type: 'appnavi:map-cmd'; cmd: 'setCenter'; lat: number; lng: number }
   | { type: 'appnavi:map-cmd'; cmd: 'setFocus'; lat: number | null; lng: number | null }
   | { type: 'appnavi:map-cmd'; cmd: 'setMarkers'; markers: MarkerPoint[] }
-  | { type: 'appnavi:map-cmd'; cmd: 'setRadiusCircle'; radiusM: number | null };
+  | {
+      type: 'appnavi:map-cmd';
+      cmd: 'setRadiusCircle';
+      radiusM: number | null;
+      lat?: number | null;
+      lng?: number | null;
+    };
 
 /** iOS / Android: WebView loads server map-embed (Kakao + OSM fallback). */
 export function KakaoMapView({
@@ -51,6 +59,8 @@ export function KakaoMapView({
   focusLat = null,
   focusLng = null,
   radiusMeters = null,
+  radiusCenterLat = null,
+  radiusCenterLng = null,
   onLongPressLocation,
   onUserInteract,
 }: KakaoMapViewProps) {
@@ -72,6 +82,8 @@ export function KakaoMapView({
     focusLng,
     markers,
     radiusMeters,
+    radiusCenterLat,
+    radiusCenterLng,
   });
   propsRef.current = {
     userLat,
@@ -81,6 +93,8 @@ export function KakaoMapView({
     focusLng,
     markers,
     radiusMeters,
+    radiusCenterLat,
+    radiusCenterLng,
   };
 
   const initial = useRef({ lat, lng, markers });
@@ -145,6 +159,8 @@ export function KakaoMapView({
         p.radiusMeters != null && Number.isFinite(p.radiusMeters) && p.radiusMeters > 0
           ? p.radiusMeters
           : null,
+      lat: p.radiusCenterLat,
+      lng: p.radiusCenterLng,
     });
   };
 
@@ -213,8 +229,10 @@ export function KakaoMapView({
         radiusMeters != null && Number.isFinite(radiusMeters) && radiusMeters > 0
           ? radiusMeters
           : null,
+      lat: radiusCenterLat,
+      lng: radiusCenterLng,
     });
-  }, [radiusMeters]);
+  }, [radiusMeters, radiusCenterLat, radiusCenterLng]);
 
   return (
     <View style={[styles.wrap, { height }]}>
