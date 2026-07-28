@@ -362,7 +362,7 @@ export default function HomeScreen() {
       const fingerprint = narration.script;
       if (!force && narrationFingerprint.current === fingerprint) return;
       narrationFingerprint.current = fingerprint;
-      announcedTop3Key.current = top3Fingerprint(narration.top3, narration.metric);
+      announcedTop3Key.current = top3Fingerprint(narration.top3, narration.metrics);
       speakScript(narration.script);
     },
     [complexes.length, narration, speakScript],
@@ -388,7 +388,7 @@ export default function HomeScreen() {
     areaTarget,
     complexes.length,
     narrationSettingsReady,
-    narrationSettings.metric,
+    narrationSettings.metrics,
     narrationSettings.topCount,
   ]);
 
@@ -397,7 +397,7 @@ export default function HomeScreen() {
     if (!pendingMoveCheck.current || !moveWatchOn) return;
     pendingMoveCheck.current = false;
 
-    const key = top3Fingerprint(narration.top3, narration.metric);
+    const key = top3Fingerprint(narration.top3, narration.metrics);
     if (announcedTop3Key.current !== null && key === announcedTop3Key.current) {
       setMoveStatus(`이동 확인 · Top ${narration.topCount} 변동 없음`);
       return;
@@ -424,7 +424,7 @@ export default function HomeScreen() {
       narrationSettings,
     );
     narrationFingerprint.current = stats.script;
-    announcedTop3Key.current = top3Fingerprint(stats.top3, stats.metric);
+    announcedTop3Key.current = top3Fingerprint(stats.top3, stats.metrics);
     setShowTop3Card(true);
     if (stats.top3.length === 0) {
       speakScript(stats.script);
@@ -501,7 +501,7 @@ export default function HomeScreen() {
     anchorLoc.current = locationRef.current;
     announcedTop3Key.current = top3Fingerprint(
       buildNearbyNarration(complexes, undefined, narrationSettings).top3,
-      narrationSettings.metric,
+      narrationSettings.metrics,
     );
     setMoveStatus('이동 인식 On · 100m 이동 또는 30초마다 확인');
 

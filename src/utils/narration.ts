@@ -1,5 +1,5 @@
 import type { ComplexSummary, NarrationMetric, NarrationSettings } from '../types';
-import { narrationMetricLabel } from '../services/narrationSettings';
+import { narrationMetricLabel, narrationMetricsLabel } from '../services/narrationSettings';
 
 /**
  * Speak prices in compact 억 units.
@@ -100,15 +100,24 @@ function formatMetricSpoken(value: number | null, metric: NarrationMetric): stri
   }
 }
 
-/** One complex line using the selected narration metric. */
+function asMetricList(metrics: NarrationMetric | NarrationMetric[]): NarrationMetric[] {
+  const list = Array.isArray(metrics) ? metrics : [metrics];
+  return list.length > 0 ? list : ['sale'];
+}
+
+/** One complex line using the selected narration metric(s). */
 export function formatComplexNarration(
   c: ComplexSummary,
-  metric: NarrationMetric = 'sale',
+  metrics: NarrationMetric | NarrationMetric[] = 'sale',
 ): string {
   const name = c.aptName.replace(/\s+/g, ' ').trim() || '단지';
-  const label = narrationMetricLabel(metric);
-  const spoken = formatMetricSpoken(metricValue(c, metric), metric);
-  return `${name}는 ${label} ${spoken}입니다.`;
+  const list = asMetricList(metrics);
+  const parts = list.map((metric) => {
+    const label = narrationMetricLabel(metric);
+    const spoken = formatMetricSpoken(metricValue(c, metric), metric);
+    return `${label} ${spoken}`;
+  });
+  return `${name}는 ${parts.join(', ')}입니다.`;
 }
 
 export interface NarrationStats {
@@ -117,21 +126,21 @@ export interface NarrationStats {
   avgSale: number | null;
   avgJeonse: number | null;
   script: string;
-  metric: NarrationMetric;
+  metrics: NarrationMetric[];
   topCount: number;
 }
 
-const DEFAULT_OPTS: NarrationSettings = { metric: 'sale', topCount: 3 };
+const DEFAULT_OPTS: NarrationSettings = { metrics: ['sale'], topCount: 3 };
 
 export function buildNearbyNarration(
   complexes: ComplexSummary[],
   areaLabel?: string,
   opts: NarrationSettings = DEFAULT_OPTS,
 ): NarrationStats {
-  const metric = opts.metric ?? 'sale';
+  const metrics = asMetricList(opts.metrics ?? ['sale']);
   const topCount = opts.topCount ?? 3;
   const withSale = complexes.filter((c) => Number.isFinite(c.medianPrice) && c.medianPrice > 0);
-  // Always rank by 매매가; speak only the selected metric for top N.
+  // Always rank by 매매가; speak selected metrics for top N.
   const top3 = [...withSale].sort((a, b) => b.medianPrice - a.medianPrice).slice(0, topCount);
 
   const avgSale =
@@ -148,20 +157,20 @@ export function buildNearbyNarration(
       : null;
 
   const areaPrefix = areaLabel ? `${areaLabel} 기준, ` : '';
-  const metricLabel = narrationMetricLabel(metric);
+  const metricsLabel = narrationMetricsLabel(metrics);
 
   if (top3.length === 0) {
     return {
       top3,
       avgSale,
       avgJeonse,
-      metric,
+      metrics,
       topCount,
       script: `${areaPrefix}주변에 최근 매매 실거래가 있는 단지를 찾지 못했습니다.`,
     };
   }
 
-  const ranking = top3.map((c) => formatComplexNarration(c, metric)).join(' ');
+  const ranking = top3.map((c) => formatComplexNarration(c, metrics)).join(' ');
 
   const avgParts = [
     avgSale !== null ? `주변 매매가는 ${formatManwonSpoken(avgSale)}` : null,
@@ -172,22 +181,31 @@ export function buildNearbyNarration(
     avgParts.length > 0 ? `${avgParts.join('이고, ')}입니다.` : '';
 
   const script = [
-    `${areaPrefix}매매가 상위 ${top3.length}곳의 ${metricLabel}입니다.`,
+    `${areaPrefix}매매가 상위 ${top3.length}곳의 ${metricsLabel}입니다.`,
     ranking,
     avgSentence,
   ]
     .filter(Boolean)
     .join(' ');
 
-  return { top3, avgSale, avgJeonse, metric, topCount, script };
+  return { top3, avgSale, avgJeonse, metrics, topCount, script };
 }
 
 /** Stable key for Top N identity + spoken metric values (detect ranking changes). */
-export function top3Fingerprint(top3: ComplexSummary[], metric: NarrationMetric = 'sale'): string {
+export function top3Fingerprint(
+  top3: ComplexSummary[],
+  metrics: NarrationMetric | NarrationMetric[] = 'sale',
+): string {
+  const list = asMetricList(metrics);
   return top3
     .map((c) => {
-      const v = metricValue(c, metric);
-      return `${c.id}:${v == null ? 'na' : Math.round(v)}`;
+      const values = list
+        .map((m) => {
+          const v = metricValue(c, m);
+          return `${m}:${v == null ? 'na' : Math.round(v)}`;
+        })
+        .join(',');
+      return `${c.id}:${values}`;
     })
     .join('|');
 }
@@ -196,14 +214,14 @@ export function buildTop3ChangedScript(stats: NarrationStats): string {
   if (stats.top3.length === 0) {
     return '위치가 바뀌었지만, 주변에 최근 매매 실거래가 있는 단지를 찾지 못했습니다.';
   }
-  const label = narrationMetricLabel(stats.metric);
-  const ranking = stats.top3.map((c) => formatComplexNarration(c, stats.metric)).join(' ');
+  const label = narrationMetricsLabel(stats.metrics);
+  const ranking = stats.top3.map((c) => formatComplexNarration(c, stats.metrics)).join(' ');
   return `위치가 바뀌어 매매가 Top ${stats.top3.length}의 ${label}가 갱신되었습니다. ${ranking}`;
 }
 
 export function buildTop3InvestigateScript(stats: NarrationStats): string {
   if (stats.top3.length === 0) return stats.script;
-  const label = narrationMetricLabel(stats.metric);
-  const ranking = stats.top3.map((c) => formatComplexNarration(c, stats.metric)).join(' ');
+  const label = narrationMetricsLabel(stats.metrics);
+  const ranking = stats.top3.map((c) => formatComplexNarration(c, stats.metrics)).join(' ');
   return `선택한 위치 기준 매매가 상위 ${stats.top3.length}곳의 ${label}입니다. ${ranking}`;
 }
