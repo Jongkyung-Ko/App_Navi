@@ -36,6 +36,8 @@ export interface ComplexSummary {
   recentTrades: ApartmentTrade[];
   trendSummary: string;
   changePercent: number | null;
+  /** Recent 매매 평단가 change % (earliest→latest month with trades) */
+  salePerPyeongChangePercent: number | null;
   /** 최근 구간 전세 중위 보증금(만원) */
   medianJeonse: number | null;
   jeonseCount: number;
@@ -54,6 +56,8 @@ export interface MonthlyTrend {
   month: string; // YYYY-MM
   avgPrice: number;
   medianPrice: number;
+  /** Average 매매 평단가(만원/평) for the month */
+  avgPricePerPyeong: number;
   tradeCount: number;
 }
 
@@ -240,6 +244,17 @@ export function formatTrendSummary(
     text: `최근 ${withData.length}개월 중위가 ${Math.round(first.medianPrice).toLocaleString('ko-KR')}만 → ${Math.round(last.medianPrice).toLocaleString('ko-KR')}만${arrow} · 거래 ${tradeCount}건`,
     changePercent: pct,
   };
+}
+
+/** Earliest→latest month avg 매매평단가 change %. */
+export function salePerPyeongChangePercentFromMonthly(
+  monthly: MonthlyTrend[],
+): number | null {
+  const withData = monthly.filter(
+    (m) => m.tradeCount > 0 && Number.isFinite(m.avgPricePerPyeong) && m.avgPricePerPyeong > 0,
+  );
+  if (withData.length < 2) return null;
+  return changePercent(withData[0].avgPricePerPyeong, withData[withData.length - 1].avgPricePerPyeong);
 }
 
 export function complexId(aptName: string, dong: string): string {
@@ -507,23 +522,27 @@ export function aggregateComplexes(
     const latestDealDate =
       [...list, ...rents].map((t) => t.dealDate).sort().at(-1) ?? '';
 
-    const monthMap = new Map<string, number[]>();
+    const monthMap = new Map<string, { prices: number[]; pyeongs: number[] }>();
     for (const t of list) {
       const key = `${t.dealYear}-${String(t.dealMonth).padStart(2, '0')}`;
-      const arr = monthMap.get(key) ?? [];
-      arr.push(t.price);
-      monthMap.set(key, arr);
+      const entry = monthMap.get(key) ?? { prices: [], pyeongs: [] };
+      entry.prices.push(t.price);
+      const py = pricePerPyeong(t.price, t.exclusiveArea);
+      if (py > 0) entry.pyeongs.push(py);
+      monthMap.set(key, entry);
     }
     const monthly: MonthlyTrend[] = [...monthMap.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, vals]) => ({
         month,
-        avgPrice: average(vals),
-        medianPrice: median(vals),
-        tradeCount: vals.length,
+        avgPrice: average(vals.prices),
+        medianPrice: median(vals.prices),
+        avgPricePerPyeong: vals.pyeongs.length ? average(vals.pyeongs) : 0,
+        tradeCount: vals.prices.length,
       }));
 
     const { text, changePercent: pct } = formatTrendSummary(monthly, list.length);
+    const pyeongPct = salePerPyeongChangePercentFromMonthly(monthly);
     const medianPrice = prices.length ? median(prices) : 0;
     const medianJeonse = rents.length ? median(rents.map((r) => r.price)) : null;
     const saleJeonseGap =
@@ -549,6 +568,7 @@ export function aggregateComplexes(
         .slice(0, 20),
       trendSummary: text,
       changePercent: pct,
+      salePerPyeongChangePercent: pyeongPct,
       medianJeonse,
       jeonseCount: rents.length,
       saleJeonseGap,

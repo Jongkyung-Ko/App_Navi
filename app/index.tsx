@@ -16,6 +16,7 @@ import { AreaBandChips } from '../src/components/AreaBandChips';
 import { ComplexList } from '../src/components/ComplexList';
 import { ErrorBanner } from '../src/components/ErrorBanner';
 import { FeatureToggle } from '../src/components/FeatureToggle';
+import { FullscreenTextCardOverlay, FullscreenTextCardToggle } from '../src/components/FullscreenTextCardOverlay';
 import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { NarrationToggle } from '../src/components/NarrationToggle';
@@ -95,6 +96,8 @@ export default function HomeScreen() {
   const [followUser, setFollowUser] = useState(true);
   /** Expand map to fullscreen while keeping home narration state alive. */
   const [mapFullscreen, setMapFullscreen] = useState(false);
+  /** Fullscreen-only text cards driven by narration settings (when speech is off). */
+  const [textCardsOn, setTextCardsOn] = useState(false);
 
   const narrationFingerprint = useRef<string | null>(null);
   const announcedTop3Key = useRef<string | null>(null);
@@ -616,8 +619,15 @@ export default function HomeScreen() {
   }, []);
 
   const closeMapFullscreen = useCallback(() => {
+    setTextCardsOn(false);
     setMapFullscreen(false);
   }, []);
+
+  useEffect(() => {
+    if (narrationOn || !mapFullscreen) {
+      setTextCardsOn(false);
+    }
+  }, [narrationOn, mapFullscreen]);
 
   const radiusMeters =
     nearbySettings.scope === 'radius' ? nearbySettings.radiusKm * 1000 : null;
@@ -767,7 +777,16 @@ export default function HomeScreen() {
       >
         <View style={[styles.fullscreenRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.fullscreenHeader}>
-            <Text style={styles.fullscreenTitle}>맵 전체보기</Text>
+            {!narrationOn ? (
+              <FullscreenTextCardToggle
+                enabled={textCardsOn}
+                onToggle={setTextCardsOn}
+                settings={narrationSettings}
+                canEnable={narration.top3.length > 0}
+              />
+            ) : (
+              <Text style={styles.fullscreenTitle}>맵 전체보기</Text>
+            )}
             <Pressable
               accessibilityLabel="맵 전체보기 닫기"
               onPress={closeMapFullscreen}
@@ -800,6 +819,13 @@ export default function HomeScreen() {
               onUserInteract={onMapUserInteract}
             />
             {mapOverlayControls}
+            {!narrationOn ? (
+              <FullscreenTextCardOverlay
+                enabled={textCardsOn}
+                narration={narration}
+                areaLabel={areaFilterLabel}
+              />
+            ) : null}
             {narrationOn ? (
               <View style={styles.fullscreenNarration} pointerEvents="none">
                 <Text style={styles.fullscreenNarrationText}>
@@ -1014,11 +1040,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a2332',
   },
   fullscreenHeader: {
-    height: 48,
+    minHeight: 48,
     paddingHorizontal: 14,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   fullscreenTitle: {
     color: '#fff',

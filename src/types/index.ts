@@ -20,6 +20,8 @@ export interface MonthlyTrend {
   month: string;
   avgPrice: number;
   medianPrice: number;
+  /** Average 매매 평단가(만원/평) for the month */
+  avgPricePerPyeong?: number;
   tradeCount: number;
 }
 
@@ -90,6 +92,8 @@ export interface ComplexSummary {
   recentTrades: ApartmentTrade[];
   trendSummary: string;
   changePercent: number | null;
+  /** Recent 매매 평단가 change % (earliest→latest month with trades) */
+  salePerPyeongChangePercent?: number | null;
   medianJeonse: number | null;
   jeonseCount: number;
   saleJeonseGap: number | null;

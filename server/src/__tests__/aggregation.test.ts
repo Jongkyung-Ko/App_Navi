@@ -12,6 +12,7 @@ import {
   pricePerPyeong,
   quarterOfMonth,
   recentYearMonths,
+  salePerPyeongChangePercentFromMonthly,
   type ApartmentTrade,
 } from '../types.js';
 
@@ -98,6 +99,7 @@ describe('aggregateComplexes', () => {
     expect(a.medianJeonse).toBe(7000);
     expect(a.saleJeonseGap).toBe(4000);
     expect(a.monthly).toHaveLength(2);
+    expect(a.salePerPyeongChangePercent).toBeCloseTo(20);
   });
 
   it('filters by area band', () => {
@@ -258,8 +260,20 @@ describe('formatTrendSummary', () => {
   it('describes rising trend', () => {
     const { text, changePercent: pct } = formatTrendSummary(
       [
-        { month: '2026-03', avgPrice: 100, medianPrice: 100, tradeCount: 2 },
-        { month: '2026-04', avgPrice: 110, medianPrice: 110, tradeCount: 3 },
+        {
+          month: '2026-03',
+          avgPrice: 100,
+          medianPrice: 100,
+          avgPricePerPyeong: 400,
+          tradeCount: 2,
+        },
+        {
+          month: '2026-04',
+          avgPrice: 110,
+          medianPrice: 110,
+          avgPricePerPyeong: 440,
+          tradeCount: 3,
+        },
       ],
       5,
     );
@@ -267,6 +281,28 @@ describe('formatTrendSummary', () => {
     expect(text).toContain('100만');
     expect(text).toContain('110만');
     expect(text).toContain('거래 5건');
+  });
+});
+
+describe('salePerPyeongChangePercentFromMonthly', () => {
+  it('computes earliest-to-latest pyeong change', () => {
+    const pct = salePerPyeongChangePercentFromMonthly([
+      {
+        month: '2026-03',
+        avgPrice: 100,
+        medianPrice: 100,
+        avgPricePerPyeong: 400,
+        tradeCount: 2,
+      },
+      {
+        month: '2026-04',
+        avgPrice: 110,
+        medianPrice: 110,
+        avgPricePerPyeong: 440,
+        tradeCount: 3,
+      },
+    ]);
+    expect(pct).toBeCloseTo(10);
   });
 });
 
