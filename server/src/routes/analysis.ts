@@ -24,10 +24,11 @@ analysisRouter.get('/leader-index', async (req, res) => {
     const surgeThresholdPercent = req.query.surgeThreshold
       ? Number(req.query.surgeThreshold)
       : 3;
-    const areaTarget = req.query.areaTarget ? Number(req.query.areaTarget) : undefined;
+    // Default 84㎡ major band — GapGapGap analyzes 평단가 within a band
+    const areaTarget = req.query.areaTarget ? Number(req.query.areaTarget) : 84;
     const areaTolerance = req.query.areaTolerance
       ? Number(req.query.areaTolerance)
-      : undefined;
+      : 7;
 
     const result = await computeLeaderIndex({
       lawdCd,

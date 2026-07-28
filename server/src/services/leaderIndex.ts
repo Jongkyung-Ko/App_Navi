@@ -1,4 +1,4 @@
-import { fetchTradesForMonths } from './molit.js';
+import { fetchSaleAndJeonseForMonths } from './molit.js';
 import {
   average,
   complexId,
@@ -7,20 +7,30 @@ import {
   type ApartmentTrade,
 } from '../types.js';
 
+/** Major exclusive-area bands for GapGapGap analysis (㎡) */
+export const ANALYSIS_AREA_TARGETS = [59, 74, 79, 84, 99] as const;
+
 export interface LeaderComplex {
   rank: number;
   id: string;
   aptName: string;
   dong: string;
+  /** Absolute median sale price (만원) in ranking window */
   medianPrice: number;
   avgPrice: number;
+  /** Ranking metric: median 평단가 (만원/평) */
   avgPricePerPyeong: number;
+  medianPricePerPyeong: number;
+  medianJeonsePerPyeong: number | null;
+  saleJeonseGapPerPyeong: number | null;
   tradeCount: number;
   rankingTradeCount: number;
+  jeonseRankingCount: number;
 }
 
 export interface LeaderMonthPoint {
   month: string;
+  /** Median-of-leaders value for this series (만원/평 or 만원) */
   avgMedian: number | null;
   sampleCount: number;
   momChangePercent: number | null;
@@ -40,8 +50,18 @@ export interface LeaderIndexResult {
   years: number;
   months: string[];
   tradeCount: number;
+  jeonseCount: number;
+  /** Exclusive-area band used for filtering (㎡) */
+  areaTarget: number;
+  areaTolerance: number;
+  /** Always pyeong for GapGapGap analysis */
+  metric: 'pyeong';
   leaders: LeaderComplex[];
+  /** @deprecated use monthlySale — kept for older clients */
   monthly: LeaderMonthPoint[];
+  monthlySale: LeaderMonthPoint[];
+  monthlyJeonse: LeaderMonthPoint[];
+  monthlyGap: LeaderMonthPoint[];
   surges: SurgeInterval[];
   surgeThresholdPercent: number;
   summary: string;
@@ -52,7 +72,7 @@ function monthKey(t: ApartmentTrade): string {
   return `${t.dealYear}-${String(t.dealMonth).padStart(2, '0')}`;
 }
 
-function pricePerPyeong(price: number, exclusiveArea: number): number {
+export function pricePerPyeong(price: number, exclusiveArea: number): number {
   if (!exclusiveArea) return 0;
   return price / (exclusiveArea / 3.3058);
 }
@@ -60,6 +80,27 @@ function pricePerPyeong(price: number, exclusiveArea: number): number {
 function displayMonths(count: number, from = new Date()): string[] {
   const keys = recentYearMonths(count, from);
   return [...keys].reverse().map((ym) => `${ym.slice(0, 4)}-${ym.slice(4, 6)}`);
+}
+
+function filterByArea(
+  trades: ApartmentTrade[],
+  areaTarget: number,
+  areaTolerance: number,
+): ApartmentTrade[] {
+  return trades.filter(
+    (t) => t.exclusiveArea > 0 && Math.abs(t.exclusiveArea - areaTarget) <= areaTolerance,
+  );
+}
+
+function attachMom(monthly: LeaderMonthPoint[]): LeaderMonthPoint[] {
+  for (let i = 1; i < monthly.length; i++) {
+    const prev = monthly[i - 1].avgMedian;
+    const curr = monthly[i].avgMedian;
+    if (prev != null && curr != null && prev > 0) {
+      monthly[i].momChangePercent = ((curr - prev) / prev) * 100;
+    }
+  }
+  return monthly;
 }
 
 /**
@@ -123,103 +164,176 @@ export function detectSurgeIntervals(
   );
 }
 
-export function buildLeaderIndexFromSales(
+function buildComplexMonthPyeong(
+  trades: ApartmentTrade[],
+  leaderIds: Set<string>,
+): Map<string, Map<string, number>> {
+  const raw = new Map<string, Map<string, number[]>>();
+  for (const t of trades) {
+    const id = complexId(t.aptName, t.dong);
+    if (!leaderIds.has(id)) continue;
+    const py = pricePerPyeong(t.price, t.exclusiveArea);
+    if (!py) continue;
+    const mk = monthKey(t);
+    let monthMap = raw.get(id);
+    if (!monthMap) {
+      monthMap = new Map();
+      raw.set(id, monthMap);
+    }
+    const arr = monthMap.get(mk) ?? [];
+    arr.push(py);
+    monthMap.set(mk, arr);
+  }
+
+  const out = new Map<string, Map<string, number>>();
+  for (const [id, monthMap] of raw) {
+    const medians = new Map<string, number>();
+    for (const [mk, vals] of monthMap) {
+      medians.set(mk, median(vals));
+    }
+    out.set(id, medians);
+  }
+  return out;
+}
+
+function averageLeadersByMonth(
+  monthLabels: string[],
+  leaderIds: Set<string>,
+  complexMonth: Map<string, Map<string, number>>,
+): LeaderMonthPoint[] {
+  return attachMom(
+    monthLabels.map((month) => {
+      const vals: number[] = [];
+      for (const id of leaderIds) {
+        const m = complexMonth.get(id)?.get(month);
+        if (m !== undefined) vals.push(m);
+      }
+      return {
+        month,
+        avgMedian: vals.length ? average(vals) : null,
+        sampleCount: vals.length,
+        momChangePercent: null,
+      };
+    }),
+  );
+}
+
+function gapSeries(
+  sale: LeaderMonthPoint[],
+  jeonse: LeaderMonthPoint[],
+): LeaderMonthPoint[] {
+  return attachMom(
+    sale.map((s, i) => {
+      const j = jeonse[i];
+      const gap =
+        s.avgMedian != null && j?.avgMedian != null ? s.avgMedian - j.avgMedian : null;
+      return {
+        month: s.month,
+        avgMedian: gap,
+        sampleCount: s.sampleCount > 0 && (j?.sampleCount ?? 0) > 0 ? 1 : 0,
+        momChangePercent: null,
+      };
+    }),
+  );
+}
+
+export function buildLeaderIndexFromTrades(
   sales: ApartmentTrade[],
+  jeonse: ApartmentTrade[],
   options: {
     topN: number;
     years: number;
     surgeThresholdPercent: number;
     minRankingTrades?: number;
+    areaTarget: number;
+    areaTolerance: number;
   },
 ): Omit<LeaderIndexResult, 'lawdCd' | 'mock'> {
-  const { topN, years, surgeThresholdPercent } = options;
+  const {
+    topN,
+    years,
+    surgeThresholdPercent,
+    areaTarget,
+    areaTolerance,
+  } = options;
   const minRankingTrades = options.minRankingTrades ?? 3;
   const monthLabels = displayMonths(years * 12);
   const rankingMonths = new Set(monthLabels.slice(-12));
 
+  const filteredSales = filterByArea(sales, areaTarget, areaTolerance);
+  const filteredJeonse = filterByArea(jeonse, areaTarget, areaTolerance);
+
   const byComplex = new Map<string, ApartmentTrade[]>();
-  for (const t of sales) {
+  for (const t of filteredSales) {
     const id = complexId(t.aptName, t.dong);
     const list = byComplex.get(id) ?? [];
     list.push(t);
     byComplex.set(id, list);
   }
 
+  const jeonseByComplex = new Map<string, ApartmentTrade[]>();
+  for (const t of filteredJeonse) {
+    const id = complexId(t.aptName, t.dong);
+    const list = jeonseByComplex.get(id) ?? [];
+    list.push(t);
+    jeonseByComplex.set(id, list);
+  }
+
   const candidates: LeaderComplex[] = [];
   for (const [id, list] of byComplex) {
     const rankingTrades = list.filter((t) => rankingMonths.has(monthKey(t)));
-    const rankingPrices = rankingTrades.map((t) => t.price);
-    if (rankingPrices.length < minRankingTrades) continue;
+    const rankingPyeong = rankingTrades
+      .map((t) => pricePerPyeong(t.price, t.exclusiveArea))
+      .filter((v) => v > 0);
+    if (rankingPyeong.length < minRankingTrades) continue;
 
     const sample = list[0];
-    const pyeong = rankingTrades.map((t) => pricePerPyeong(t.price, t.exclusiveArea));
+    const rankingPrices = rankingTrades.map((t) => t.price);
+    const rents = (jeonseByComplex.get(id) ?? []).filter((t) =>
+      rankingMonths.has(monthKey(t)),
+    );
+    const rentPyeong = rents
+      .map((t) => pricePerPyeong(t.price, t.exclusiveArea))
+      .filter((v) => v > 0);
+    const medianSalePy = median(rankingPyeong);
+    const medianJeonsePy = rentPyeong.length ? median(rentPyeong) : null;
 
     candidates.push({
       rank: 0,
       id,
       aptName: sample.aptName,
       dong: sample.dong,
-      medianPrice: median(rankingPrices),
-      avgPrice: average(rankingPrices),
-      avgPricePerPyeong: pyeong.length ? average(pyeong) : 0,
+      medianPrice: rankingPrices.length ? median(rankingPrices) : 0,
+      avgPrice: rankingPrices.length ? average(rankingPrices) : 0,
+      avgPricePerPyeong: average(rankingPyeong),
+      medianPricePerPyeong: medianSalePy,
+      medianJeonsePerPyeong: medianJeonsePy,
+      saleJeonseGapPerPyeong:
+        medianJeonsePy != null ? medianSalePy - medianJeonsePy : null,
       tradeCount: list.length,
-      rankingTradeCount: rankingPrices.length,
+      rankingTradeCount: rankingPyeong.length,
+      jeonseRankingCount: rentPyeong.length,
     });
   }
 
-  candidates.sort((a, b) => b.medianPrice - a.medianPrice);
+  // Rank by 평단가 (not absolute price)
+  candidates.sort((a, b) => b.medianPricePerPyeong - a.medianPricePerPyeong);
   const leaders = candidates.slice(0, topN).map((c, i) => ({ ...c, rank: i + 1 }));
   const leaderIds = new Set(leaders.map((l) => l.id));
 
-  const rawByComplexMonth = new Map<string, Map<string, number[]>>();
-  for (const t of sales) {
-    const id = complexId(t.aptName, t.dong);
-    if (!leaderIds.has(id)) continue;
-    const mk = monthKey(t);
-    let monthMap = rawByComplexMonth.get(id);
-    if (!monthMap) {
-      monthMap = new Map();
-      rawByComplexMonth.set(id, monthMap);
-    }
-    const arr = monthMap.get(mk) ?? [];
-    arr.push(t.price);
-    monthMap.set(mk, arr);
-  }
+  const saleByComplexMonth = buildComplexMonthPyeong(filteredSales, leaderIds);
+  const jeonseByComplexMonth = buildComplexMonthPyeong(filteredJeonse, leaderIds);
 
-  const complexMonthMedian = new Map<string, Map<string, number>>();
-  for (const [id, monthMap] of rawByComplexMonth) {
-    const medians = new Map<string, number>();
-    for (const [mk, vals] of monthMap) {
-      medians.set(mk, median(vals));
-    }
-    complexMonthMedian.set(id, medians);
-  }
+  const monthlySale = averageLeadersByMonth(monthLabels, leaderIds, saleByComplexMonth);
+  const monthlyJeonse = averageLeadersByMonth(
+    monthLabels,
+    leaderIds,
+    jeonseByComplexMonth,
+  );
+  const monthlyGap = gapSeries(monthlySale, monthlyJeonse);
+  const surges = detectSurgeIntervals(monthlySale, surgeThresholdPercent);
 
-  const monthly: LeaderMonthPoint[] = monthLabels.map((month) => {
-    const vals: number[] = [];
-    for (const id of leaderIds) {
-      const m = complexMonthMedian.get(id)?.get(month);
-      if (m !== undefined) vals.push(m);
-    }
-    return {
-      month,
-      avgMedian: vals.length ? average(vals) : null,
-      sampleCount: vals.length,
-      momChangePercent: null,
-    };
-  });
-
-  for (let i = 1; i < monthly.length; i++) {
-    const prev = monthly[i - 1].avgMedian;
-    const curr = monthly[i].avgMedian;
-    if (prev != null && curr != null && prev > 0) {
-      monthly[i].momChangePercent = ((curr - prev) / prev) * 100;
-    }
-  }
-
-  const surges = detectSurgeIntervals(monthly, surgeThresholdPercent);
-
-  const withData = monthly.filter((m) => m.avgMedian != null);
+  const withData = monthlySale.filter((m) => m.avgMedian != null);
   const first = withData[0]?.avgMedian;
   const last = withData.at(-1)?.avgMedian;
   const totalChange =
@@ -234,8 +348,8 @@ export function buildLeaderIndexFromSales(
 
   const summary =
     leaders.length === 0
-      ? '선정 기준을 만족하는 대장 단지가 부족합니다.'
-      : `대장 ${leaders.length}개 단지 평균 중위가 기준, 최근 ${years}년 변화 ${
+      ? `${areaTarget}㎡ 밴드에서 선정 기준을 만족하는 대장 단지가 부족합니다.`
+      : `${areaTarget}㎡ 평단가 기준 대장 ${leaders.length}개, 최근 ${years}년 매매평단 변화 ${
           totalChange == null ? 'N/A' : `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}%`
         }. ${surgeText}`;
 
@@ -243,13 +357,39 @@ export function buildLeaderIndexFromSales(
     topN,
     years,
     months: recentYearMonths(years * 12),
-    tradeCount: sales.length,
+    tradeCount: filteredSales.length,
+    jeonseCount: filteredJeonse.length,
+    areaTarget,
+    areaTolerance,
+    metric: 'pyeong',
     leaders,
-    monthly,
+    monthly: monthlySale,
+    monthlySale,
+    monthlyJeonse,
+    monthlyGap,
     surges,
     surgeThresholdPercent,
     summary,
   };
+}
+
+/** @deprecated prefer buildLeaderIndexFromTrades */
+export function buildLeaderIndexFromSales(
+  sales: ApartmentTrade[],
+  options: {
+    topN: number;
+    years: number;
+    surgeThresholdPercent: number;
+    minRankingTrades?: number;
+    areaTarget?: number;
+    areaTolerance?: number;
+  },
+): Omit<LeaderIndexResult, 'lawdCd' | 'mock'> {
+  return buildLeaderIndexFromTrades(sales, [], {
+    ...options,
+    areaTarget: options.areaTarget ?? 84,
+    areaTolerance: options.areaTolerance ?? 7,
+  });
 }
 
 export async function computeLeaderIndex(params: {
@@ -266,23 +406,26 @@ export async function computeLeaderIndex(params: {
     15,
     Math.max(1, Number(params.surgeThresholdPercent ?? 3)),
   );
+  const areaTarget = Number.isFinite(params.areaTarget)
+    ? Number(params.areaTarget)
+    : 84;
+  const areaTolerance = Number.isFinite(params.areaTolerance)
+    ? Number(params.areaTolerance)
+    : 7;
   const monthKeys = recentYearMonths(years * 12);
 
-  // Sale-only: jeonse not needed for leader price index
-  const sales = await fetchTradesForMonths(params.lawdCd, monthKeys, 8);
+  const { sales, jeonse } = await fetchSaleAndJeonseForMonths(
+    params.lawdCd,
+    monthKeys,
+    8,
+  );
 
-  let filtered = sales;
-  if (params.areaTarget !== undefined && Number.isFinite(params.areaTarget)) {
-    const tol = params.areaTolerance ?? 7;
-    filtered = sales.filter(
-      (t) => Math.abs(t.exclusiveArea - params.areaTarget!) <= tol,
-    );
-  }
-
-  const built = buildLeaderIndexFromSales(filtered, {
+  const built = buildLeaderIndexFromTrades(sales, jeonse, {
     topN,
     years,
     surgeThresholdPercent,
+    areaTarget,
+    areaTolerance,
   });
 
   return {
