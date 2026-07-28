@@ -42,7 +42,7 @@ function buildMapPage(opts: {
       padding:6px 8px; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.18); }
     #legend .row { display:flex; align-items:center; gap:5px; margin-top:2px; }
     #legend .dot { width:9px; height:9px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex:0 0 auto; }
-    #hint { position:absolute; left:50%; bottom:52px; top:auto; transform:translateX(-50%); z-index:999;
+    #hint { position:absolute; left:50%; bottom:64px; top:auto; transform:translateX(-50%); z-index:999;
       max-width:min(240px, 62%); text-align:center;
       background:rgba(255,255,255,.94); color:#5c6670; font:11px/1.35 sans-serif;
       padding:5px 10px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.12); pointer-events:none; }
@@ -379,7 +379,6 @@ function buildMapPage(opts: {
       if (ready) return;
       ready = true;
       const map = L.map('map', { zoomControl: false }).setView([lat, lng], 15);
-      L.control.zoom({ position: 'topright' }).addTo(map);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
@@ -605,8 +604,6 @@ function buildMapPage(opts: {
           ready = true;
           const center = new kakao.maps.LatLng(lat, lng);
           const map = new kakao.maps.Map(document.getElementById('map'), { center: center, level: 4 });
-          const zoomControl = new kakao.maps.ZoomControl();
-          map.addControl(zoomControl, kakao.maps.ControlPosition.TOPRIGHT);
 
           let focusMarker = null;
           let radiusCircle = null;
