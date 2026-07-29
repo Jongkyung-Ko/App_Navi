@@ -1,0 +1,121 @@
+# Build Android AAB for Play Console upload.
+# Trigger: Actions → "Build Android AAB" → Run workflow
+#
+# Required GitHub secret:
+#   EXPO_TOKEN — https://expo.dev/accounts/[account]/settings/access-tokens
+name: Build Android AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - preview
+
+jobs:
+  build-aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "::error::GitHub Secret EXPO_TOKEN 이 없습니다. expo.dev 에서 Access Token을 만들어 Repo Secrets에 넣어주세요."
+            exit 1
+          fi
+
+      - name: Setup Expo / EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure EAS project is linked
+        run: |
+          # If projectId is still a placeholder, create/link a project non-interactively when possible.
+          node -e "
+            const fs=require('fs');
+            const j=JSON.parse(fs.readFileSync('app.json','utf8'));
+            const id=j.expo?.extra?.eas?.projectId;
+            if(!id || id==='app-navi-local') process.exit(2);
+            console.log('eas.projectId=', id);
+          " || {
+            echo "Linking Expo project..."
+            npx eas-cli init --non-interactive --force 2>/dev/null || npx eas-cli project:init --non-interactive || true
+          }
+
+      - name: Build Android on EAS
+        id: build
+        run: |
+          set -euo pipefail
+          PROFILE="${{ github.event.inputs.profile }}"
+          echo "Building profile=$PROFILE"
+          eas build \
+            --platform android \
+            --profile "$PROFILE" \
+            --non-interactive \
+            --wait \
+            --json \
+            | tee eas-build.json
+
+          # eas may print a JSON object or array
+          URL=$(jq -r '
+            (if type=="array" then .[0] else . end)
+            | .artifacts.applicationArchiveUrl
+               // .artifacts.buildUrl
+               // empty
+          ' eas-build.json)
+          ID=$(jq -r '(if type=="array" then .[0] else . end) | .id // empty' eas-build.json)
+          echo "artifact_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "build_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Artifact URL: $URL"
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "::error::AAB URL을 찾지 못했습니다. eas-build.json을 확인하세요."
+            cat eas-build.json
+            exit 1
+          fi
+
+      - name: Download AAB
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          curl -fSL --retry 5 --retry-delay 5 \
+            -o dist/app-navi.aab \
+            "${{ steps.build.outputs.artifact_url }}"
+          ls -lh dist/app-navi.aab
+
+      - name: Upload AAB to GitHub Actions Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-navi-aab
+          path: dist/app-navi.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          {
+            echo "## App Navi AAB ready"
+            echo ""
+            echo "- Profile: \`${{ github.event.inputs.profile }}\`"
+            echo "- EAS build id: \`${{ steps.build.outputs.build_id }}\`"
+            echo "- GitHub Artifact: **app-navi-aab** (이 워크플로 페이지 하단 Artifacts에서 다운로드)"
+            echo "- Expo artifact: ${{ steps.build.outputs.artifact_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"

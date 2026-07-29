@@ -14,6 +14,17 @@
 
 스크린샷은 `store/play/screenshots/`에 직접 넣어 주세요 (최소 2장, 권장 4~8장).
 
+## AAB가 아직 없을 때 (폰으로 받기)
+
+PC 없이 GitHub Actions로 AAB를 만들 수 있습니다.  
+→ 자세한 절차: [`BUILD_AAB_ON_GITHUB.md`](./BUILD_AAB_ON_GITHUB.md)
+
+요약:
+1. Expo Access Token 발급
+2. GitHub Secret `EXPO_TOKEN` 등록
+3. Actions → **Build Android AAB** 실행
+4. Artifacts에서 `app-navi.aab` 다운로드
+
 ---
 
 ## STEP 0. 앱 만들기
