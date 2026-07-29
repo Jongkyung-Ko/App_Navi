@@ -32,7 +32,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -47,10 +50,7 @@
       "lang": "ko"
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:3001",
-      "eas": {
-        "projectId": "app-navi-local"
-      }
+      "apiBaseUrl": "http://localhost:3001"
     }
   }
 }
