@@ -49,24 +49,54 @@ jobs:
 
       - name: Ensure EAS project is linked
         run: |
-          # If projectId is still a placeholder, create/link a project non-interactively when possible.
-          node -e "
+          set -euo pipefail
+          echo "Logged in as:"
+          eas whoami
+
+          if node -e "
             const fs=require('fs');
             const j=JSON.parse(fs.readFileSync('app.json','utf8'));
             const id=j.expo?.extra?.eas?.projectId;
-            if(!id || id==='app-navi-local') process.exit(2);
-            console.log('eas.projectId=', id);
-          " || {
-            echo "Linking Expo project..."
-            npx eas-cli init --non-interactive --force 2>/dev/null || npx eas-cli project:init --non-interactive || true
-          }
+            const ok=id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+            if(!ok) process.exit(1);
+            console.log('Valid eas.projectId=', id);
+          "; then
+            echo "EAS project already linked"
+          else
+            echo "No valid projectId — creating/linking Expo project..."
+            # Remove any invalid placeholder before init
+            node -e "
+              const fs=require('fs');
+              const p='app.json';
+              const j=JSON.parse(fs.readFileSync(p,'utf8'));
+              if(j.expo?.extra?.eas) {
+                delete j.expo.extra.eas.projectId;
+                if(Object.keys(j.expo.extra.eas).length===0) delete j.expo.extra.eas;
+              }
+              fs.writeFileSync(p, JSON.stringify(j,null,2)+'\n');
+            "
+            # Create a new EAS project for this app (non-interactive)
+            eas init --non-interactive --force
+            node -e "
+              const j=JSON.parse(require('fs').readFileSync('app.json','utf8'));
+              const id=j.expo?.extra?.eas?.projectId;
+              console.log('Created/linked projectId=', id);
+              if(!id || !/^[0-9a-f-]{36}$/i.test(id)) {
+                console.error('Failed to obtain a valid Expo project UUID');
+                process.exit(1);
+              }
+            "
+          fi
 
       - name: Build Android on EAS
         id: build
+        env:
+          EAS_BUILD_NO_EXPO_GO_WARNING: "true"
         run: |
           set -euo pipefail
           PROFILE="${{ github.event.inputs.profile }}"
           echo "Building profile=$PROFILE"
+          # First Android production build may auto-generate a keystore on EAS.
           eas build \
             --platform android \
             --profile "$PROFILE" \
@@ -75,7 +105,6 @@ jobs:
             --json \
             | tee eas-build.json
 
-          # eas may print a JSON object or array
           URL=$(jq -r '
             (if type=="array" then .[0] else . end)
             | .artifacts.applicationArchiveUrl
@@ -83,8 +112,10 @@ jobs:
                // empty
           ' eas-build.json)
           ID=$(jq -r '(if type=="array" then .[0] else . end) | .id // empty' eas-build.json)
+          STATUS=$(jq -r '(if type=="array" then .[0] else . end) | .status // empty' eas-build.json)
           echo "artifact_url=$URL" >> "$GITHUB_OUTPUT"
           echo "build_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Build status=$STATUS id=$ID"
           echo "Artifact URL: $URL"
           if [ -z "$URL" ] || [ "$URL" = "null" ]; then
             echo "::error::AAB URL을 찾지 못했습니다. eas-build.json을 확인하세요."
