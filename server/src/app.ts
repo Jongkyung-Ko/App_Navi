@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import { geocodeRouter } from './routes/geocode.js';
 import { tradesRouter } from './routes/trades.js';
+import { analysisRouter } from './routes/analysis.js';
 import { mapEmbedHandler } from './routes/mapEmbed.js';
 import { getDiskCacheRoot } from './services/diskCache.js';
 import { ensureTradeStoreReady, getTradeStoreInfo } from './services/tradeStore.js';
@@ -51,6 +52,7 @@ export function createApp() {
   app.get('/map-embed', mapEmbedHandler);
   app.use('/api/geocode', geocodeRouter);
   app.use('/api/trades', tradesRouter);
+  app.use('/api/analysis', analysisRouter);
 
   const privacyCandidates = [
     path.resolve(__dirname, '../public/privacy.html'),

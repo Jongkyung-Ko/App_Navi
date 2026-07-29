@@ -89,7 +89,15 @@ npm start
 npm test
 ```
 
-집계/중위가/평당가/증감률 단위 테스트 (`server/src/__tests__`).
+집계/중위가/평당가/증감률·대장지수 단위 테스트 (`server/src/__tests__`).
+
+## 분석 API (갭갭갭 등 읽기 전용 클라이언트용)
+
+- `GET /api/analysis/regions` — 서울 25구 · 광역시 구 목록
+- `GET /api/analysis/leader-index?lawdCd=11680&topN=10&years=3&surgeThreshold=3&areaTarget=84`
+  - 기본 **84㎡** 밴드(±7) 내 **평단가**로 대장 TOP N 선정
+  - 월별 `monthlySale` / `monthlyJeonse` / `monthlyGap` (만원/평)
+  - 매매 평단 급등 구간(`surges`)
 
 ## EAS 빌드 (내부 테스트)
 
