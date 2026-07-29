@@ -52,6 +52,20 @@ export function createApp() {
   app.use('/api/geocode', geocodeRouter);
   app.use('/api/trades', tradesRouter);
 
+  const privacyCandidates = [
+    path.resolve(__dirname, '../public/privacy.html'),
+    path.resolve(process.cwd(), 'public/privacy.html'),
+    path.resolve(process.cwd(), 'server/public/privacy.html'),
+  ];
+  const privacyFile = privacyCandidates.find((p) => fs.existsSync(p));
+  if (privacyFile) {
+    const sendPrivacy = (_req: express.Request, res: express.Response) => {
+      res.sendFile(privacyFile);
+    };
+    app.get('/privacy', sendPrivacy);
+    app.get('/privacy.html', sendPrivacy);
+  }
+
   const staticCandidates = [
     path.resolve(__dirname, '../public'),
     path.resolve(__dirname, '../../dist'),
