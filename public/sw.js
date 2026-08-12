@@ -1,6 +1,12 @@
 /* App Navi minimal service worker — required for installability. */
-const CACHE = 'app-navi-v2';
-const PRECACHE = ['/manifest.webmanifest', '/favicon.png', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE = 'app-navi-v3';
+const PRECACHE = [
+  '/manifest.webmanifest',
+  '/favicon.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/apple-touch-icon.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -1,14 +1,16 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNearbySettings } from '../src/hooks/useNearbySettings';
+import { usePwaInstall } from '../src/hooks/usePwaInstall';
 import { formatRadiusLabel } from '../src/services/nearbySettings';
 import { RADIUS_KM_OPTIONS, type NearbySearchScope } from '../src/types';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { settings, ready, update } = useNearbySettings();
+  const pwa = usePwaInstall();
 
   const setScope = (scope: NearbySearchScope) => {
     void update({ scope });
@@ -84,6 +86,46 @@ export default function SettingsScreen() {
           반경을 고르면 조사 범위가 자동으로 「내 위치 반경」으로 바뀝니다.
         </Text>
       </View>
+
+      {Platform.OS === 'web' ? (
+        <>
+          <Text style={styles.sectionTitle}>앱 설치 (PWA)</Text>
+          <Text style={styles.sectionSub}>
+            홈 화면에 추가하면 앱처럼 실행됩니다. 카카오톡 인앱 브라우저에서는 설치가
+            안 되니 Chrome/Safari로 열어 주세요.
+          </Text>
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>홈 화면 바로가기</Text>
+            <Text style={styles.cardValue}>
+              {pwa.isInstalled ? '이미 설치되어 있습니다' : '아직 설치되지 않았습니다'}
+            </Text>
+            {!pwa.isInstalled ? (
+              <Pressable
+                style={[
+                  styles.installBtn,
+                  (pwa.installing || pwa.waitingForPrompt) && styles.disabled,
+                ]}
+                disabled={pwa.installing || pwa.waitingForPrompt}
+                onPress={() => {
+                  pwa.clearMessage();
+                  void pwa.install();
+                }}
+              >
+                <Text style={styles.installBtnText}>
+                  {pwa.waitingForPrompt
+                    ? '준비 중…'
+                    : pwa.installing
+                      ? '설치 중…'
+                      : pwa.isIos || pwa.isInAppBrowser
+                        ? '설치 방법 보기'
+                        : '앱 설치'}
+                </Text>
+              </Pressable>
+            ) : null}
+            {pwa.message ? <Text style={styles.cardHint}>{pwa.message}</Text> : null}
+          </View>
+        </>
+      ) : null}
     </ScrollView>
   );
 }
@@ -158,5 +200,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: '#6b7580',
+  },
+  installBtn: {
+    marginTop: 14,
+    backgroundColor: '#1a2332',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  installBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  disabled: {
+    opacity: 0.55,
   },
 });

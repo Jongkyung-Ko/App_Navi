@@ -725,6 +725,7 @@ export default function HomeScreen() {
                 compact
                 installed={pwa.isInstalled}
                 installing={pwa.installing}
+                waitingForPrompt={pwa.waitingForPrompt}
                 onPress={() => {
                   pwa.clearMessage();
                   void pwa.install();
@@ -859,7 +860,10 @@ export default function HomeScreen() {
       <PwaInstallPrompt
         visible={pwa.showFirstVisit}
         installing={pwa.installing}
+        waitingForPrompt={pwa.waitingForPrompt}
+        canPromptNative={pwa.canPromptNative}
         isIos={pwa.isIos}
+        isInAppBrowser={pwa.isInAppBrowser}
         onInstall={() => void pwa.install()}
         onDismiss={() => void pwa.dismissFirstVisit()}
       />

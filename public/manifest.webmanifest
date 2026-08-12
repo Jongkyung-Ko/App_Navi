@@ -3,7 +3,7 @@
   "name": "App Navi",
   "short_name": "App Navi",
   "description": "내 위치 주변 아파트 매매·전세 시세를 한눈에 확인하세요.",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -30,6 +30,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/narrow.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "주변 아파트 시세"
+    },
+    {
+      "src": "/screenshots/wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "App Navi 지도와 시세"
     }
   ]
 }

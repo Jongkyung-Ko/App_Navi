@@ -10,6 +10,8 @@ COPY . .
 # Same-origin API when served by Express
 ENV EXPO_PUBLIC_API_BASE_URL=
 RUN npx expo export --platform web
+# Ensure PWA assets survive export (manifest, sw, icons, screenshots)
+RUN cp -a public/. dist/
 RUN mkdir -p server/public && cp -r dist/* server/public/
 
 FROM node:22-bookworm-slim AS runner

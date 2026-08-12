@@ -26,7 +26,12 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="App Navi" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="icon" href="/favicon.png" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){})})}`,
+          }}
+        />
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>
