@@ -241,7 +241,14 @@ export async function fetchTradesForMonth(lawdCd: string, dealYmd: string): Prom
       writeCachedMonth(cacheKey, dealYmd, mock);
       return mock;
     }
-    throw err;
+    // Keep /api/trades usable when live MOLIT is down but the disk store
+    // still has other months (common for the incomplete current month).
+    console.warn(
+      `[molit] sale ${lawdCd}/${dealYmd} unavailable:`,
+      err instanceof Error ? err.message : err,
+    );
+    writeCachedMonth(cacheKey, dealYmd, []);
+    return [];
   }
 }
 
@@ -279,7 +286,12 @@ export async function fetchJeonseForMonth(lawdCd: string, dealYmd: string): Prom
       writeCachedMonth(cacheKey, dealYmd, mock);
       return mock;
     }
-    throw err;
+    console.warn(
+      `[molit] jeonse ${lawdCd}/${dealYmd} unavailable:`,
+      err instanceof Error ? err.message : err,
+    );
+    writeCachedMonth(cacheKey, dealYmd, []);
+    return [];
   }
 }
 
