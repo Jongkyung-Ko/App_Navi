@@ -10,8 +10,10 @@ COPY . .
 # Same-origin API when served by Express
 ENV EXPO_PUBLIC_API_BASE_URL=
 RUN npx expo export --platform web
-# Ensure PWA assets survive export (manifest, sw, icons, screenshots)
-RUN cp -a public/. dist/
+# Copy PWA assets without overwriting Expo-generated index.html
+# (that file embeds the JS bundle script tags — overwriting it blanks the web UI)
+RUN cp -a public/manifest.webmanifest public/sw.js public/favicon.png dist/ \
+  && cp -a public/icons public/screenshots dist/
 RUN mkdir -p server/public && cp -r dist/* server/public/
 
 FROM node:22-bookworm-slim AS runner
