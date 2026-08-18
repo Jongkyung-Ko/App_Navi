@@ -681,7 +681,9 @@ export default function HomeScreen() {
           disabled={investigating}
           onPress={() => void goToMyLocation()}
         >
-          <Text style={styles.mapIconGlyph}>◎</Text>
+          <View style={styles.mapIconInner} pointerEvents="none">
+            <Text style={styles.mapIconGlyph}>◎</Text>
+          </View>
         </Pressable>
         {opts?.showExpand ? (
           <Pressable
@@ -690,7 +692,9 @@ export default function HomeScreen() {
             style={styles.mapIconBtn}
             onPress={openMapFullscreen}
           >
-            <MapFullscreenIcon size={20} color="#fff" />
+            <View style={styles.mapIconInner} pointerEvents="none">
+              <MapFullscreenIcon size={18} color="#fff" />
+            </View>
           </Pressable>
         ) : null}
       </View>
@@ -1144,6 +1148,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  mapIconInner: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   locateBtnActive: {
     backgroundColor: 'rgba(37, 99, 235, 0.5)',
@@ -1155,7 +1166,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '800',
-    lineHeight: 20,
+    lineHeight: 18,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   mapBusy: {
     position: 'absolute',
