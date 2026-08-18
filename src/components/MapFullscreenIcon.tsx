@@ -6,42 +6,46 @@ type Props = {
   color?: string;
 };
 
-/** Material-style expand / fullscreen paths (24x24). */
-const FULLSCREEN_PATH =
-  'M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 0h2v6h-6v-2h4v-4z';
-
 /**
- * Centered fullscreen / expand icon for map controls.
- * Web renders a real DOM <svg>; native uses solid corner bars.
+ * Outward corner arrows — the usual “expand / fullscreen” affordance.
+ * Drawn larger and wrapped so RN Web flex-centering actually applies.
  */
-export function MapFullscreenIcon({ size = 18, color = '#fff' }: Props) {
+const EXPAND_PATH =
+  'M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 0h2v7h-7v-2h5v-5z';
+
+export function MapFullscreenIcon({ size = 20, color = '#fff' }: Props) {
   if (Platform.OS === 'web') {
-    return createElement(
-      'svg',
-      {
-        width: size,
-        height: size,
-        viewBox: '0 0 24 24',
-        fill: color,
-        xmlns: 'http://www.w3.org/2000/svg',
-        'aria-hidden': true,
-        focusable: 'false',
-        style: {
-          display: 'block',
-          flexShrink: 0,
-        },
-      },
-      createElement('path', { d: FULLSCREEN_PATH }),
+    return (
+      <View style={[styles.wrap, { width: size, height: size }]} pointerEvents="none">
+        {createElement(
+          'svg',
+          {
+            width: size,
+            height: size,
+            viewBox: '0 0 24 24',
+            fill: color,
+            xmlns: 'http://www.w3.org/2000/svg',
+            'aria-hidden': true,
+            focusable: 'false',
+            style: {
+              display: 'block',
+              width: size,
+              height: size,
+            },
+          },
+          createElement('path', { d: EXPAND_PATH }),
+        )}
+      </View>
     );
   }
 
-  const inset = Math.max(1, Math.round(size * 0.05));
-  const arm = Math.max(5, Math.round(size * 0.4));
-  const thick = Math.max(2, Math.round(size * 0.15));
+  const inset = 1;
+  const arm = Math.max(6, Math.round(size * 0.38));
+  const thick = Math.max(2, Math.round(size * 0.16));
 
   return (
     <View
-      style={[styles.box, { width: size, height: size }]}
+      style={[styles.wrap, { width: size, height: size }]}
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
@@ -62,7 +66,9 @@ export function MapFullscreenIcon({ size = 18, color = '#fff' }: Props) {
 }
 
 const styles = StyleSheet.create({
-  box: {
+  wrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
   },
   barH: {
