@@ -347,16 +347,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.18)',
   },
   toneUpHot: {
-    backgroundColor: 'rgba(153, 27, 27, 0.94)',
+    backgroundColor: 'rgba(153, 27, 27, 0.62)',
   },
   toneUp: {
-    backgroundColor: 'rgba(185, 28, 28, 0.9)',
+    backgroundColor: 'rgba(185, 28, 28, 0.58)',
   },
   toneDown: {
-    backgroundColor: 'rgba(30, 64, 175, 0.9)',
+    backgroundColor: 'rgba(30, 64, 175, 0.58)',
   },
   toneFlat: {
-    backgroundColor: 'rgba(26, 35, 50, 0.92)',
+    backgroundColor: 'rgba(26, 35, 50, 0.55)',
   },
   topRank: {
     color: 'rgba(255,255,255,0.9)',
