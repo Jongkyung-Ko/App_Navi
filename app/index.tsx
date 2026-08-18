@@ -690,7 +690,7 @@ export default function HomeScreen() {
             style={styles.mapIconBtn}
             onPress={openMapFullscreen}
           >
-            <MapFullscreenIcon size={16} color="#fff" />
+            <MapFullscreenIcon size={18} color="#fff" />
           </Pressable>
         ) : null}
       </View>
