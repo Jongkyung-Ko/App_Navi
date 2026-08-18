@@ -20,6 +20,7 @@ import { FullscreenTextCardOverlay, FullscreenTextCardToggle } from '../src/comp
 import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
 import { NarrationToggle } from '../src/components/NarrationToggle';
+import { GapGapGapLinkButton } from '../src/components/GapGapGapLink';
 import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall';
 import { SearchScopeChips } from '../src/components/SearchScopeChips';
 import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
@@ -714,6 +715,7 @@ export default function HomeScreen() {
           title: 'App Navi',
           headerRight: () => (
             <View style={styles.headerRight}>
+              <GapGapGapLinkButton compact />
               <Pressable
                 accessibilityLabel="설정"
                 onPress={() => router.push('/settings')}
@@ -948,6 +950,7 @@ export default function HomeScreen() {
           <Text style={styles.secondaryBtnText}>전체 단지 보기</Text>
         </Pressable>
       </View>
+      <GapGapGapLinkButton />
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>주변 단지 시세</Text>

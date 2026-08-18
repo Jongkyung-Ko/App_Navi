@@ -1,7 +1,8 @@
 import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GAPGAPGAP_URL } from '../src/constants/apps';
 import { useNearbySettings } from '../src/hooks/useNearbySettings';
 import { usePwaInstall } from '../src/hooks/usePwaInstall';
 import { formatRadiusLabel } from '../src/services/nearbySettings';
@@ -85,6 +86,37 @@ export default function SettingsScreen() {
         <Text style={styles.cardHint}>
           반경을 고르면 조사 범위가 자동으로 「내 위치 반경」으로 바뀝니다.
         </Text>
+      </View>
+
+      <Text style={styles.sectionTitle}>관련 앱</Text>
+      <Text style={styles.sectionSub}>
+        갭갭갭에서 구별 대장 아파트 시세·급등 흐름을 볼 수 있습니다. App Navi 시세
+        데이터를 읽기 전용으로 사용합니다.
+      </Text>
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>갭갭갭</Text>
+        <Text style={styles.cardValue}>대장 아파트로 읽는 지역 상승 흐름</Text>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="갭갭갭 열기"
+          style={styles.installBtn}
+          onPress={() => {
+            void (async () => {
+              try {
+                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                  window.open(GAPGAPGAP_URL, '_blank', 'noopener,noreferrer');
+                  return;
+                }
+                await Linking.openURL(GAPGAPGAP_URL);
+              } catch {
+                Alert.alert('열 수 없음', '갭갭갭 링크를 열 수 없습니다.');
+              }
+            })();
+          }}
+        >
+          <Text style={styles.installBtnText}>갭갭갭 열기</Text>
+        </Pressable>
+        <Text style={styles.cardHint}>{GAPGAPGAP_URL}</Text>
       </View>
 
       {Platform.OS === 'web' ? (
