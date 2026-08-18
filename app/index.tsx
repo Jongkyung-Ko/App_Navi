@@ -19,6 +19,7 @@ import { FeatureToggle } from '../src/components/FeatureToggle';
 import { FullscreenTextCardOverlay, FullscreenTextCardToggle } from '../src/components/FullscreenTextCardOverlay';
 import { KakaoMapView } from '../src/components/KakaoMapView';
 import { LoadingBlock } from '../src/components/LoadingBlock';
+import { MapFullscreenIcon } from '../src/components/MapFullscreenIcon';
 import { NarrationToggle } from '../src/components/NarrationToggle';
 import { GapGapGapLinkButton } from '../src/components/GapGapGapLink';
 import { PwaInstallButton, PwaInstallPrompt } from '../src/components/PwaInstall';
@@ -685,10 +686,11 @@ export default function HomeScreen() {
         {opts?.showExpand ? (
           <Pressable
             accessibilityLabel="맵 전체보기"
+            accessibilityRole="button"
             style={styles.mapIconBtn}
             onPress={openMapFullscreen}
           >
-            <Text style={styles.mapIconGlyph}>⤢</Text>
+            <MapFullscreenIcon size={16} color="#fff" />
           </Pressable>
         ) : null}
       </View>
