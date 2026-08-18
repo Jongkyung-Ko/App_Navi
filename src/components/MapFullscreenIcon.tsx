@@ -7,31 +7,39 @@ type Props = {
 };
 
 /**
- * Fullscreen / expand icon: four outward corner brackets.
- * Built from Views so layout stays centered on RN Web (raw <svg> was not).
+ * Fullscreen icon: four corner brackets.
+ * Only top/left absolute offsets — right/bottom positioning is unreliable on RN Web.
  */
 export function MapFullscreenIcon({ size = 18, color = '#fff' }: Props) {
-  const thick = Math.max(2, Math.round(size * 0.14));
-  const arm = Math.max(5, Math.round(size * 0.36));
-  const gap = Math.max(2, Math.round(size * 0.14));
+  const thick = 2;
+  const arm = Math.max(5, Math.round(size * 0.34));
+  const pad = Math.max(2, Math.round((size - (arm * 2 + thick)) / 2));
 
-  // Inner drawing box, centered by parent flex.
-  const box = size;
+  const left = pad;
+  const right = size - pad - arm;
+  const rightV = size - pad - thick;
+  const top = pad;
+  const bottom = size - pad - arm;
+  const bottomH = size - pad - thick;
+
+  const bar = (style: object) => (
+    <View style={[styles.bar, { backgroundColor: color }, style]} />
+  );
 
   return (
-    <View style={[styles.root, { width: box, height: box }]} pointerEvents="none">
+    <View style={[styles.root, { width: size, height: size }]} pointerEvents="none">
       {/* top-left */}
-      <View style={[styles.h, { backgroundColor: color, width: arm, height: thick, top: gap, left: gap }]} />
-      <View style={[styles.v, { backgroundColor: color, width: thick, height: arm, top: gap, left: gap }]} />
+      {bar({ width: arm, height: thick, top, left })}
+      {bar({ width: thick, height: arm, top, left })}
       {/* top-right */}
-      <View style={[styles.h, { backgroundColor: color, width: arm, height: thick, top: gap, right: gap }]} />
-      <View style={[styles.v, { backgroundColor: color, width: thick, height: arm, top: gap, right: gap }]} />
+      {bar({ width: arm, height: thick, top, left: right })}
+      {bar({ width: thick, height: arm, top, left: rightV })}
       {/* bottom-left */}
-      <View style={[styles.h, { backgroundColor: color, width: arm, height: thick, bottom: gap, left: gap }]} />
-      <View style={[styles.v, { backgroundColor: color, width: thick, height: arm, bottom: gap, left: gap }]} />
+      {bar({ width: arm, height: thick, top: bottomH, left })}
+      {bar({ width: thick, height: arm, top: bottom, left })}
       {/* bottom-right */}
-      <View style={[styles.h, { backgroundColor: color, width: arm, height: thick, bottom: gap, right: gap }]} />
-      <View style={[styles.v, { backgroundColor: color, width: thick, height: arm, bottom: gap, right: gap }]} />
+      {bar({ width: arm, height: thick, top: bottomH, left: right })}
+      {bar({ width: thick, height: arm, top: bottom, left: rightV })}
     </View>
   );
 }
@@ -40,12 +48,8 @@ const styles = StyleSheet.create({
   root: {
     position: 'relative',
   },
-  h: {
+  bar: {
     position: 'absolute',
-    borderRadius: 1,
-  },
-  v: {
-    position: 'absolute',
-    borderRadius: 1,
+    borderRadius: 0.5,
   },
 });
