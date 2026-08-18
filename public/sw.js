@@ -1,5 +1,5 @@
 /* App Navi minimal service worker — required for installability. */
-const CACHE = 'app-navi-v3';
+const CACHE = 'app-navi-v4';
 const PRECACHE = [
   '/manifest.webmanifest',
   '/favicon.png',
